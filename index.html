@@ -121,6 +121,21 @@ body.editing #brush.on{display:block}
 #err{position:fixed;inset:0;display:none;place-items:center;color:#dfe9f6;text-align:center;padding:24px;font-size:16px}
 @media (max-width:640px){#panel{top:auto;left:0;width:100%;max-height:76vh;transform:translateY(105%);border-radius:22px 22px 0 0}}
 @media (prefers-reduced-motion:reduce){#panel,#editBar,#dock,#eTab{transition:none}.ring{animation-duration:.6s}}
+.tabs{display:flex;gap:6px;overflow-x:auto;padding:0 16px 12px;scrollbar-width:none;-webkit-overflow-scrolling:touch;flex:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:none;border:0;border-radius:999px;padding:8px 14px;background:var(--ui-line);font-size:13.5px;font-weight:500;cursor:pointer}
+.tab[aria-selected="true"]{background:var(--ui-accent);color:var(--ui-on-accent)}
+.pane{display:none;gap:16px;padding:6px 20px 22px}
+.pane.on{display:grid}
+.grp{font-size:12.5px;font-weight:600;color:var(--ui-muted);margin:10px 0 -6px;padding-top:12px;border-top:1px solid var(--ui-line)}
+.grp:first-child{border-top:0;padding-top:0;margin-top:0}
+.slider{position:relative;height:30px;touch-action:pan-y;cursor:ew-resize;outline:none}
+.strack{position:absolute;left:10px;right:10px;top:13px;height:4px;border-radius:2px;background:var(--ui-line)}
+.sfill{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--ui-accent);opacity:.5}
+.sthumb{position:absolute;top:50%;width:20px;height:20px;margin:-10px 0 0 -10px;border-radius:50%;background:var(--ui-solid);box-shadow:inset 0 0 0 5px var(--ui-accent),0 2px 6px var(--ui-sh1);transition:transform .15s}
+.slider.drag .sthumb{transform:scale(1.25)}
+.slider:focus-visible .sthumb{outline:2px solid var(--ui-accent);outline-offset:3px}
+.hide{display:none!important}
 </style>
 </head>
 <body>
@@ -139,6 +154,7 @@ body.editing #brush.on{display:block}
 <button class="disc" id="bShow" aria-label="Show controls" title="Show controls (H)"><svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="18" cy="12" r="1"/></svg></button>
 <aside id="panel" class="paper" aria-label="Settings">
   <header><h2>Settings</h2><button class="close" id="bClose" aria-label="Close settings"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></header>
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Settings sections"></nav>
   <div id="panelBody"></div>
 </aside>
 <section id="editBar" class="paper" aria-label="Edit sheets">
@@ -179,6 +195,8 @@ function hashStr(s){let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt
 const pow2near = v => Math.pow(2, Math.round(Math.log2(Math.max(1, v))));
 const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
 const rnd = (a, b) => a + Math.random() * (b - a);
+function b64(u8){ let s = ''; for (let i = 0; i < u8.length; i += 8192) s += String.fromCharCode.apply(null, u8.subarray(i, i + 8192)); return btoa(s); }
+function unb64(str){ const s = atob(str), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
 
 /* ================= palettes, scenes, settings ================= */
 const PALETTES = {
@@ -186,80 +204,103 @@ const PALETTES = {
   lagoon:  {name:'Lagoon',   stops:[[0,'#031518'],[.15,'#0a4a50'],[.33,'#12a6a0'],[.7,'#1b6c70'],[1,'#1a4f58']], accent:'#ffb347', light:'#d9fff6', ambient:'#1f7f7a', glow:'#c8fff2'},
   kelp:    {name:'Kelp',     stops:[[0,'#06110a'],[.15,'#1b3d24'],[.35,'#4f9b5c'],[.7,'#3a6f55'],[1,'#2a5246']], accent:'#f2e6c4', light:'#eaffdf', ambient:'#3f7a55', glow:'#e6ffc8'},
   sunset:  {name:'Sunset',   stops:[[0,'#0a1630'],[.2,'#183f7a'],[.45,'#2f63a8'],[.75,'#c98a6a'],[1,'#ffd3a0']], accent:'#ff6a4a', light:'#fff1dc', ambient:'#e0a07a', glow:'#ffe2b0'},
+  ocean:   {name:'Ocean day',stops:[[0,'#e9f4f8'],[.22,'#b4dbe6'],[.48,'#6fb0c0'],[.75,'#2f7385'],[1,'#123a44']], accent:'#e9f4f8', light:'#ffffff', ambient:'#6fb0c0', glow:'#d8f4ff'},
+  cutout:  {name:'Blue cut', stops:[[0,'#c6dcf3'],[.2,'#6da0e2'],[.45,'#3367c4'],[.75,'#183c8c'],[1,'#0a1a44']], accent:'#ffffff', light:'#ffffff', ambient:'#3367c4', glow:'#9cc4ff'},
+  night:   {name:'Night pool',stops:[[0,'#f3f7fb'],[.14,'#a8cdf2'],[.32,'#2f74d8'],[.62,'#10306e'],[1,'#040a1c']], accent:'#ffffff', light:'#ffffff', ambient:'#2f74d8', glow:'#6fa8ff'},
   pale:    {name:'Pale',     stops:[[0,'#dceaf4'],[.25,'#9cc4e2'],[.5,'#5f97c9'],[.8,'#2d5f95'],[1,'#173b66']], accent:'#ffffff', light:'#ffffff', ambient:'#9cc4e2', glow:'#cfe8ff'},
   midnight:{name:'Midnight', stops:[[0,'#02040a'],[.2,'#0b2350'],[.4,'#143f86'],[.75,'#0c1d45'],[1,'#081430']], accent:'#79f2ff', light:'#9fd8ff', ambient:'#143f86', glow:'#5fd6ff'},
-  lightbox:{name:'Lightbox', stops:[[0,'#010309'],[.3,'#2443ff'],[1,'#8aa2ff']], accent:'#d6e2ff', light:'#ffffff', ambient:'#2443ff', glow:'#ffffff'},
   coral:   {name:'Coral',    stops:[[0,'#160a1c'],[.18,'#4a2550'],[.38,'#d9573b'],[.7,'#7a4a7a'],[1,'#4d4176']], accent:'#ffd25e', light:'#ffe9d6', ambient:'#a0506a', glow:'#ffc890'}
 };
+const ALL_FISH = ['reef','tang','angel','koi','slim','eel','seahorse','turtle','ray','jelly','shark','puffer','tiny','crab','starfish'];
 const DEFAULTS = {
   palette:'abyss', stops:PALETTES.abyss.stops.map(s => ({t:s[0], c:s[1]})), cAccent:'#ff8a4c', cLight:'#cfe6ff', cAmbient:'#2b5c9e', ambientAmt:0,
   layerContrast:.35, coral:.35, accentDepth:.35, fishStyle:'accent',
   backGlow:.4, cGlow:'#9fd0ff', glowSize:.45, glowSpill:.5,
-  tunnel:true, tFrontW:1.05, tFrontH:.95, tBackW:.32, tBackH:.26, tSizeCurve:.85, tCorner:.8, tBulge:.15,
+  lightAngle:115, lightReach:.6, darkness:0, rim:.35,
+  shapeMode:'tunnel', tFrontW:1.05, tFrontH:.95, tBackW:.32, tBackH:.26, tSizeCurve:.85, tCorner:.8, tBulge:.15,
   tFrontX:0, tFrontY:0, tBackX:.18, tBackY:.08, tBend:1.6, tRhythm:.15, tWobble:.12, tWobbleSize:.45, tJitterSize:.06, tJitterOffset:.04,
+  wDir:135, wFront:.3, wBack:1.1, wAmp:.3, wFreq:.4,
+  windows:0, winSize:.35, winDepth:.45, winSpread:.6,
   seabed:.3, hills:.35, stalactites:0, rocks:0, holes:.15,
-  layers:18, depth:40, curve:1.15, organic:.7, seed:1234,
-  fishDensity:.35, plantDensity:.45, schools:.4, clearFront:.5, bigVisitors:true,
-  fishTypes:{reef:true, tang:true, angel:true, koi:true, slim:true, puffer:true, shark:true, ray:true, jelly:true, tiny:true},
+  smoothing:.6, roughness:.35, wobble:.12, wobbleSpeed:.35,
+  layers:18, depth:40, curve:1.15, seed:1234, variety:6,
+  fishDensity:.35, plantDensity:.45, schools:.4, clearFront:.5, bigVisitors:true, fishSize:1, plantSize:1, plantsCut:true, fishShadows:true, peck:.5,
+  fishTypes:{reef:true, tang:true, angel:true, koi:true, slim:true, eel:true, seahorse:true, turtle:true, ray:true, jelly:true, shark:true, puffer:false, tiny:true, crab:true, starfish:true},
   growTypes:{kelp:true, grass:true, fern:true, fan:true, finger:true, anemone:true, tube:true, grape:true},
   hangTypes:{vine:true, drape:true, roots:true, ribbon:true},
+  waterFx:.25, waterScale:.4, waterSpeed:.35,
   current:.2, sway:.35, particles:.3, plankton:.2, rays:.3, caustics:.15,
   bubbleStyle:'soft', bubbleAmount:.35, bubbleSize:.5, bubbleSpeed:.5, bubbleOpacity:.55, fishTrails:.3,
-  bobX:.2, bobY:.3, bobZ:.2, bobRoll:.1, bobSpeed:.35, lookAround:.5, pinchMode:'dolly', returnHome:true,
-  grain:.35, shadows:.55, shadowDist:.5, shadowSoft:.6, rim:.35, quality:'auto',
+  lens:.5, viewX:0, viewY:0, bobX:.2, bobY:.3, bobZ:.2, bobRoll:.1, bobSpeed:.35, lookAround:.5, pinchMode:'dolly', returnHome:true,
+  grain:.35, shadows:.55, shadowDist:.5, shadowSoft:.6, quality:'auto',
   dof:false, tapFocus:true, focus:.3, dofRange:.12, dofNear:.7, dofFar:.35, dofMax:.5,
-  sound:false, volume:.5
+  sound:false, volume:.5, music:false, musicVol:.5
 };
 const SCENES = {
-  calm:{name:'Calm tunnel', set:{palette:'abyss', tunnel:true, tFrontW:1.05, tFrontH:.95, tBackW:.32, tBackH:.26, tSizeCurve:.85, tCorner:.8, tBulge:.15, tFrontX:0, tFrontY:0, tBackX:.18, tBackY:.08, tBend:1.6, tRhythm:.15, tWobble:.12, tWobbleSize:.45, seabed:.3, hills:.35, stalactites:0, rocks:0, holes:.15, layers:18, depth:40, plantDensity:.45, fishDensity:.35, coral:.35, plankton:.2, fishStyle:'accent', backGlow:.4, glowSize:.45, glowSpill:.5}},
-  reef:{name:'Reef window', set:{palette:'lagoon', tunnel:true, tFrontW:1.15, tFrontH:1, tBackW:.72, tBackH:.55, tSizeCurve:.6, tCorner:.9, tBulge:.3, tFrontX:0, tFrontY:0, tBackX:0, tBackY:.06, tBend:1.2, tRhythm:.1, tWobble:.1, tWobbleSize:.4, seabed:.45, hills:.5, stalactites:0, rocks:.15, holes:.05, layers:14, depth:34, plantDensity:.8, fishDensity:.45, coral:.75, plankton:.1, fishStyle:'accent', backGlow:.25, glowSize:.6, glowSpill:.3}},
-  sunset:{name:'Sunset window', set:{palette:'sunset', tunnel:true, tFrontW:1.1, tFrontH:.95, tBackW:.55, tBackH:.4, tSizeCurve:.7, tCorner:.7, tBulge:.35, tFrontX:0, tFrontY:0, tBackX:0, tBackY:.05, tBend:1.4, tRhythm:.2, tWobble:.06, tWobbleSize:.3, seabed:.35, hills:.45, stalactites:0, rocks:0, holes:0, layers:20, depth:40, plantDensity:.6, fishDensity:.35, coral:.6, plankton:.1, fishStyle:'silhouette', backGlow:.8, glowSize:.55, glowSpill:.7}},
-  cave:{name:'Deep cave', set:{palette:'midnight', tunnel:true, tFrontW:.95, tFrontH:.85, tBackW:.18, tBackH:.14, tSizeCurve:1.1, tCorner:.55, tBulge:.1, tFrontX:0, tFrontY:0, tBackX:-.25, tBackY:.15, tBend:2, tRhythm:.2, tWobble:.2, tWobbleSize:.55, seabed:.25, hills:.4, stalactites:.45, rocks:.3, holes:.3, layers:22, depth:55, plantDensity:.4, fishDensity:.25, coral:.2, plankton:.65, fishStyle:'light', backGlow:.6, glowSize:.3, glowSpill:.6}},
-  pale:{name:'Pale paper', set:{palette:'pale', tunnel:true, tFrontW:1, tFrontH:.92, tBackW:.5, tBackH:.38, tSizeCurve:.75, tCorner:1, tBulge:.2, tFrontX:0, tFrontY:0, tBackX:.05, tBackY:0, tBend:1.3, tRhythm:.1, tWobble:.3, tWobbleSize:.35, seabed:.25, hills:.4, stalactites:0, rocks:0, holes:.5, layers:12, depth:30, plantDensity:.5, fishDensity:.35, coral:0, plankton:0, fishStyle:'silhouette', backGlow:0, glowSize:.45, glowSpill:.3}},
-  open:{name:'Open water', set:{palette:'abyss', tunnel:false, seabed:.5, hills:.5, layers:16, depth:45, plantDensity:.5, fishDensity:.4, coral:.4, holes:0, stalactites:0, rocks:.2, fishStyle:'accent', backGlow:.3, glowSize:.7, glowSpill:.3}}
+  calm:{name:'Calm tunnel', set:{palette:'abyss', shapeMode:'tunnel', tFrontW:1.05, tFrontH:.95, tBackW:.32, tBackH:.26, tSizeCurve:.85, tCorner:.8, tBulge:.15, tFrontX:0, tFrontY:0, tBackX:.18, tBackY:.08, tBend:1.6, tRhythm:.15, tWobble:.12, tWobbleSize:.45, windows:0, seabed:.3, hills:.35, stalactites:0, rocks:0, holes:.15, layers:18, depth:40, plantDensity:.45, fishDensity:.35, coral:.35, plankton:.2, fishStyle:'accent', backGlow:.4, glowSize:.45, glowSpill:.5, clearFront:.5, darkness:0}},
+  ocean:{name:'Ocean day', set:{palette:'ocean', shapeMode:'tunnel', tFrontW:1.1, tFrontH:.85, tBackW:.55, tBackH:.3, tSizeCurve:.7, tCorner:1, tBulge:.35, tFrontX:0, tFrontY:0, tBackX:0, tBackY:.05, tBend:1.2, tRhythm:.2, tWobble:.35, tWobbleSize:.3, windows:2, winSize:.25, winDepth:.25, holes:.6, seabed:.35, hills:.5, stalactites:0, rocks:0, layers:12, depth:28, plantDensity:.6, fishDensity:.35, coral:0, plankton:0, fishStyle:'silhouette', backGlow:0, clearFront:0, darkness:.2, bubbleStyle:'paper'}},
+  bluecut:{name:'Blue cut-out', set:{palette:'cutout', shapeMode:'tunnel', tFrontW:1, tFrontH:.85, tBackW:.45, tBackH:.3, tSizeCurve:.8, tCorner:.9, tBulge:.3, tFrontX:0, tFrontY:0, tBackX:-.05, tBackY:.05, tBend:1.3, tRhythm:.25, tWobble:.4, tWobbleSize:.35, windows:4, winSize:.3, winDepth:.35, winSpread:.8, holes:.8, seabed:.4, hills:.55, stalactites:0, rocks:.2, layers:12, depth:30, plantDensity:.6, fishDensity:.4, coral:0, plankton:0, fishStyle:'silhouette', backGlow:0, clearFront:0, darkness:.3, bubbleStyle:'paper'}},
+  night:{name:'Night pool', set:{palette:'night', shapeMode:'tunnel', tFrontW:1.05, tFrontH:.95, tBackW:.4, tBackH:.35, tSizeCurve:.6, tCorner:1, tBulge:.35, tFrontX:0, tFrontY:0, tBackX:.05, tBackY:.1, tBend:1.2, tRhythm:.25, tWobble:.3, tWobbleSize:.3, windows:0, holes:.5, seabed:.25, hills:.4, stalactites:0, rocks:0, layers:14, depth:34, plantDensity:.65, fishDensity:.3, coral:0, plankton:.15, fishStyle:'light', backGlow:0, clearFront:.1, darkness:.55, lightReach:.35, bubbleStyle:'ring'}},
+  waves:{name:'Side waves', set:{palette:'night', shapeMode:'waves', wDir:140, wFront:.25, wBack:1.15, wAmp:.35, wFreq:.35, tWobble:.2, tWobbleSize:.35, windows:0, holes:.3, seabed:0, stalactites:0, rocks:0, layers:10, depth:30, plantDensity:.4, fishDensity:.3, coral:0, fishStyle:'light', backGlow:0, clearFront:0, darkness:.3, bubbleStyle:'paper'}},
+  sunset:{name:'Sunset window', set:{palette:'sunset', shapeMode:'tunnel', tFrontW:1.1, tFrontH:.95, tBackW:.55, tBackH:.4, tSizeCurve:.7, tCorner:.7, tBulge:.35, tFrontX:0, tFrontY:0, tBackX:0, tBackY:.05, tBend:1.4, tRhythm:.2, tWobble:.06, tWobbleSize:.3, windows:0, seabed:.35, hills:.45, stalactites:0, rocks:0, holes:0, layers:20, depth:40, plantDensity:.6, fishDensity:.35, coral:.6, plankton:.1, fishStyle:'silhouette', backGlow:.8, glowSize:.55, glowSpill:.7, clearFront:.5, darkness:0}},
+  cave:{name:'Deep cave', set:{palette:'midnight', shapeMode:'tunnel', tFrontW:.95, tFrontH:.85, tBackW:.18, tBackH:.14, tSizeCurve:1.1, tCorner:.55, tBulge:.1, tFrontX:0, tFrontY:0, tBackX:-.25, tBackY:.15, tBend:2, tRhythm:.2, tWobble:.2, tWobbleSize:.55, windows:3, winSize:.22, winDepth:.3, seabed:.25, hills:.4, stalactites:.45, rocks:.3, holes:.3, layers:22, depth:55, plantDensity:.4, fishDensity:.25, coral:.2, plankton:.65, fishStyle:'light', backGlow:.6, glowSize:.3, glowSpill:.6, clearFront:.5, darkness:.5, lightReach:.4}},
+  open:{name:'Open water', set:{palette:'abyss', shapeMode:'open', seabed:.5, hills:.5, layers:16, depth:45, plantDensity:.5, fishDensity:.4, coral:.4, holes:.2, windows:0, stalactites:0, rocks:.3, fishStyle:'accent', backGlow:.3, glowSize:.7, glowSpill:.3, clearFront:.5, darkness:.2}}
 };
-const STORE = 'deepfold.v3';
+const STORE = 'deepfold.v4';
 let S = JSON.parse(JSON.stringify(DEFAULTS)), hadSaved = false;
 try { const s = JSON.parse(localStorage.getItem(STORE + '.settings') || 'null'); if (s) { for (const k in s) { if (k in DEFAULTS) { if (DEFAULTS[k] && typeof DEFAULTS[k] === 'object' && !Array.isArray(DEFAULTS[k])) Object.assign(S[k], s[k]); else S[k] = s[k]; } } hadSaved = true; } } catch (e) {}
 if (!Array.isArray(S.stops) || S.stops.length < 2) S.stops = JSON.parse(JSON.stringify(DEFAULTS.stops));
-if (matchMedia('(prefers-reduced-motion: reduce)').matches && !hadSaved) { S.bobX = S.bobY = S.bobZ = S.bobRoll = 0; S.sway = .2; }
+if (matchMedia('(prefers-reduced-motion: reduce)').matches && !hadSaved) { S.bobX = S.bobY = S.bobZ = S.bobRoll = 0; S.sway = .2; S.waterFx = 0; S.wobble = 0; }
 let saveTimer = 0;
 function saveSettings(){ clearTimeout(saveTimer); saveTimer = setTimeout(() => { try { localStorage.setItem(STORE + '.settings', JSON.stringify(S)); } catch (e) {} }, 400); }
 
-/* ================= renderer ================= */
+/* ================= renderer & camera basics ================= */
 const canvas = $('#scene');
 let renderer;
 try { renderer = new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:'high-performance'}); }
 catch (e) { $('#err').style.display = 'grid'; return; }
 const IS_GL2 = !!renderer.capabilities.isWebGL2;
-renderer.setClearColor(0x02060f, 1); renderer.sortObjects = true;
+renderer.setClearColor(0x02060f, 1);
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(40, 1, .5, 400);
+const camera = new THREE.PerspectiveCamera(40, 1, .4, 500);
 const raycaster = new THREE.Raycaster();
-const IS_MOBILE = matchMedia('(pointer: coarse)').matches;
 let autoScale = 1, aspect = 1, layoutAspect = 0;
-const BASE_Z = 8, BASE_FOV = 40, GY = 56, SUB = 5, SPREAD = 6;
+const GY = 64, SUB = 5, SPREAD = 6, FRAME_K = Math.tan(20 * Math.PI / 180) * 8;
+function baseFov(){ return lerp(72, 16, S.lens); }
+function baseZ(){ return FRAME_K / Math.tan(baseFov() * Math.PI / 360); }
+function viewOff(){ const z = baseZ(); return [S.viewX * z * .35, S.viewY * z * .35]; }
 function qualityLevel(){ return S.quality === 'auto' ? 'high' : S.quality; }
 function lowRes(){ return {low:256, medium:512, high:512}[qualityLevel()]; }
 function dprCap(){ return Math.max(1, {low:1, medium:1.5, high:2}[qualityLevel()] * autoScale); }
-
 const shared = {
   uTime:{value:0}, uRes:{value:new THREE.Vector2(1,1)}, uRipple:{value:new THREE.Vector4()},
-  uLightCol:{value:new THREE.Color()}, uGrain:{value:.5}, uCaustic:{value:.4}, uRim:{value:.5}, uShadowStr:{value:.5}, uShadowSoftW:{value:.2},
+  uLightCol:{value:new THREE.Color()}, uGrain:{value:.5}, uCaustic:{value:.4}, uRim:{value:.5}, uShadowStr:{value:.5}, uShadowSoftW:{value:.2}, uLightDir:{value:new THREE.Vector2(-.42,.9)},
   uCurrent:{value:0}, uSway:{value:0}, uPix:{value:500}, uDrift:{value:new THREE.Vector2()}, uTouch:{value:new THREE.Vector4()},
   uGlowCol:{value:new THREE.Color()}, uGlow:{value:0}, uGlowSize:{value:.4}, uGlowSpill:{value:.5}, uGlowC:{value:new THREE.Vector2()},
+  uWobble:{value:0}, uWobSpeed:{value:.3},
   uDepth:{value:40}, uFocus:{value:.3}, uRange:{value:.1}, uNear:{value:.5}, uFar:{value:.3}, uDofOn:{value:0}
 };
-// keeps the depth value stored in alpha intact while blending translucent things (for depth of field)
 function keepAlpha(m, additive){ m.blending = THREE.CustomBlending; m.blendEquation = THREE.AddEquation; m.blendSrc = THREE.SrcAlphaFactor; m.blendDst = additive ? THREE.OneFactor : THREE.OneMinusSrcAlphaFactor; m.blendSrcAlpha = THREE.ZeroFactor; m.blendDstAlpha = THREE.OneFactor; return m; }
 
 /* ================= shaders ================= */
+const BEND = `
+  float bb = uCurrent * .45 + uSway * (.38 * sin(uTime * .7 + uPlantPhase) + .12 * sin(uTime * 1.9 + uPlantPhase * 1.7));
+  bb *= uFlex * uFlip;
+  float ang = bb * p.y;
+  vec2 sp = abs(bb) < 1e-4 ? vec2(0., p.y) : vec2((1. - cos(ang)) / bb, sin(ang) / bb);
+  p.xy = sp + vec2(cos(ang), -sin(ang)) * p.x;`;
 const SHEET_VS = `
-uniform vec4 uRipple; uniform vec2 uRes; uniform float uViewH;
+uniform vec4 uRipple; uniform vec2 uRes, uHalf; uniform float uViewH, uTime, uWobble, uWobSpeed, uSeed, uPlant, uFlex, uFlip, uPlantPhase, uCurrent, uSway;
 varying vec2 vUv; varying vec3 vW;
 void main(){
-  vUv = position.xy + .5;
-  vec4 w = modelMatrix * vec4(position, 1.);
+  vec3 p = position;
+  if(uPlant > .5){ ${BEND} }
+  vec4 w = modelMatrix * vec4(p, 1.);
+  vUv = w.xy / (2. * uHalf) + .5;
+  if(uWobble > 0.){
+    float t = uTime * uWobSpeed; vec2 q = w.xy / uViewH;
+    w.xy += vec2(sin(q.y * 2.3 + t + uSeed) + .5 * sin(q.y * 5.1 - t * 1.3 + uSeed * 2.), cos(q.x * 2.1 - t * .9 + uSeed * 1.3) + .5 * cos(q.x * 4.7 + t * 1.1 + uSeed)) * uWobble * .014 * uViewH;
+  }
   if(uRipple.w > .001){
     vec4 c = projectionMatrix * viewMatrix * w; vec2 n = c.xy / c.w;
     vec2 d = n - uRipple.xy; d.x *= uRes.x / uRes.y; float r = length(d) + 1e-4, fr = uRipple.z * 1.1;
@@ -270,31 +311,33 @@ void main(){
 }`;
 const SHEET_FS = `
 uniform sampler2D uLow; uniform sampler2D uPrev;
-uniform float uHasPrev, uShadowBias, uShadowStr, uShadowSoftW, uViewH, uT, uDim, uGrain, uCaustic, uRim, uTime, uSeed, uLowTexel, uIsBack;
+uniform float uHasPrev, uShadowBias, uShadowStr, uShadowSoftW, uViewH, uT, uDim, uGrain, uCaustic, uRim, uTime, uSeed, uLowTexel, uIsBack, uNoRim;
 uniform float uGlow, uGlowSize, uGlowSpill;
-uniform vec2 uPrevScale, uShadowOff, uShadowR, uSize, uGlowC; uniform vec3 uColor, uLightCol, uGlowCol;
+uniform vec2 uPrevScale, uShadowOff, uShadowR, uSize, uGlowC, uLightDir; uniform vec3 uColor, uLightCol, uGlowCol;
 varying vec2 vUv; varying vec3 vW;
 float h21(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p, p+45.32); return fract(p.x*p.y); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h21(i),h21(i+vec2(1.,0.)),f.x), mix(h21(i+vec2(0.,1.)),h21(i+vec2(1.,1.)),f.x), f.y); }
 void main(){
   vec3 col = uColor;
-  float gy = clamp(vW.y / uViewH, -1.5, 1.5);
-  col *= 1. + gy * .08;
-  if(uRim > 0. && uIsBack < .5){
+  vec2 gq = clamp(vW.xy / uViewH, -1.5, 1.5);
+  col *= 1. + dot(gq, uLightDir) * .08;
+  if(uRim > 0. && uIsBack < .5 && uNoRim < .5){
     float e = texture2D(uLow, vUv).r;
     float zone = 1. - smoothstep(.5, .62, e);
     if(zone > .001){
       float d = uLowTexel * 1.5;
       vec2 g = vec2(texture2D(uLow, vUv + vec2(d, 0.)).r - texture2D(uLow, vUv - vec2(d, 0.)).r, texture2D(uLow, vUv + vec2(0., d)).r - texture2D(uLow, vUv - vec2(0., d)).r);
       float gl = length(g);
-      if(gl > 1e-4){ float lit = dot(-g / gl, vec2(-.35, .94)); col = mix(col, uLightCol, zone * max(lit, 0.) * uRim * .32); col *= 1. - zone * max(-lit, 0.) * uRim * .22; }
+      if(gl > 1e-4){ float lit = dot(-g / gl, uLightDir); col = mix(col, uLightCol, zone * max(lit, 0.) * uRim * .32); col *= 1. - zone * max(-lit, 0.) * uRim * .22; }
     }
   }
   if(uHasPrev > .5){
     vec2 pu = (vUv - .5) * uPrevScale + .5 + uShadowOff;
-    float acc = texture2D(uPrev, pu, uShadowBias).r * .28
-      + texture2D(uPrev, pu + vec2(uShadowR.x, 0.), uShadowBias).r * .18 + texture2D(uPrev, pu - vec2(uShadowR.x, 0.), uShadowBias).r * .18
-      + texture2D(uPrev, pu + vec2(0., uShadowR.y), uShadowBias).r * .18 + texture2D(uPrev, pu - vec2(0., uShadowR.y), uShadowBias).r * .18;
+    float acc = texture2D(uPrev, pu, uShadowBias).r * .2
+      + texture2D(uPrev, pu + vec2(uShadowR.x, 0.), uShadowBias).r * .13 + texture2D(uPrev, pu - vec2(uShadowR.x, 0.), uShadowBias).r * .13
+      + texture2D(uPrev, pu + vec2(0., uShadowR.y), uShadowBias).r * .13 + texture2D(uPrev, pu - vec2(0., uShadowR.y), uShadowBias).r * .13
+      + texture2D(uPrev, pu + uShadowR * .7, uShadowBias).r * .07 + texture2D(uPrev, pu - uShadowR * .7, uShadowBias).r * .07
+      + texture2D(uPrev, pu + vec2(uShadowR.x, -uShadowR.y) * .7, uShadowBias).r * .07 + texture2D(uPrev, pu + vec2(-uShadowR.x, uShadowR.y) * .7, uShadowBias).r * .07;
     col *= 1. - smoothstep(.5 - uShadowSoftW, .5 + uShadowSoftW, acc) * uShadowStr * .6;
   }
   if(uGlow > 0.){
@@ -305,7 +348,7 @@ void main(){
   if(uCaustic > 0.){
     vec2 cp = vW.xy / uViewH * 3.;
     float c1 = sin(cp.x*2.1 + sin(cp.y*1.7 + uTime*.4)*1.3 + uTime*.22), c2 = sin(cp.y*2.4 + sin(cp.x*1.9 - uTime*.33)*1.4 - uTime*.18);
-    col += uLightCol * pow(max(0., c1*c2), 2.) * uCaustic * .16 * smoothstep(-.7, 1., gy) * (1. - uT * .75);
+    col += uLightCol * pow(max(0., c1*c2), 2.) * uCaustic * .16 * smoothstep(-.7, 1., dot(gq, uLightDir)) * (1. - uT * .75);
   }
   if(uGrain > 0.){
     vec2 gp = vUv * uSize;
@@ -315,25 +358,33 @@ void main(){
   gl_FragColor = vec4(col, uDim < .999 ? uDim : uT);
 }`;
 const FLAT_VS = `
-uniform float uTime, uMode, uPhase, uBeat, uTurn, uFlip, uFlex, uCurrent, uSway, uPlantPhase;
+uniform float uTime, uMode, uPhase, uBeat, uTurn, uFlip, uFlex, uCurrent, uSway, uPlantPhase, uPulse, uVelX;
 void main(){
   vec3 p = position;
   if(uMode > .5 && uMode < 1.5){
     float s = clamp((.22 - p.x) / .72, 0., 1.);
     p.y += sin(uPhase - s * 3.) * uBeat * .05 * s * s + uTurn * s * s * .12;
   } else if(uMode > 1.5 && uMode < 2.5){
-    float amt = clamp((-.3 - p.y) * 1.2, 0., 1.6);
-    p.x += sin(p.y * 9. - uTime * 1.6 + uPhase) * .05 * amt;
+    float amt = clamp(-.3 - p.y, 0., 2.);
+    p.x *= 1. - uPulse * .15 * clamp(1. - amt * 2., 0., 1.);
+    p.x += sin(p.y * 6.5 - uTime * 1.3 + uPhase + p.x * 3.) * .055 * amt - uVelX * amt * amt * .3;
+    p.y -= uPulse * .07 * amt;
   } else if(uMode > 2.5 && uMode < 3.5){
     float k = smoothstep(-.25, .05, p.x) * (1. - smoothstep(.32, .5, p.x));
     p.y *= 1. - uBeat * .28 * (.5 + .5 * sin(uPhase)) * k;
-  } else if(uMode > 3.5){
-    float b = uCurrent * .45 + uSway * (.38 * sin(uTime * .7 + uPlantPhase) + .12 * sin(uTime * 1.9 + uPlantPhase * 1.7));
-    b *= uFlex * uFlip;
-    float ang = b * p.y;
-    vec2 sp = abs(b) < 1e-4 ? vec2(0., p.y) : vec2((1. - cos(ang)) / b, sin(ang) / b);
-    vec2 q = sp + vec2(cos(ang), -sin(ang)) * p.x;
-    p.xy = q;
+  } else if(uMode > 3.5 && uMode < 4.5){
+    ${BEND}
+  } else if(uMode > 4.5 && uMode < 5.5){
+    float k = 1. - smoothstep(-.36, .32, p.y);
+    p.x *= 1. - uPulse * .24 * k;
+    p.y = p.y * (1. + uPulse * .07) + sin(p.x * 18. + uTime * 2.5) * .008 * k;
+  } else if(uMode > 5.5 && uMode < 6.5){
+    float s = clamp(.5 - p.x, 0., 1.2);
+    p.y += sin(uPhase - s * 7.) * uBeat * .07 * (.25 + s) + uTurn * s * s * .1;
+  } else if(uMode > 6.5){
+    float r = length(p.xy), a = atan(p.y, p.x);
+    float an = sin(uTime * .5 + uPhase + a * 2.) * .22 * r;
+    p.xy = vec2(p.x * cos(an) - p.y * sin(an), p.x * sin(an) + p.y * cos(an));
   }
   gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.);
 }`;
@@ -387,17 +438,27 @@ void main(){ vec2 q = gl_PointCoord - .5; float d = length(q) * 2., a;
 const GRID_FS = `uniform vec2 uGridN; uniform vec3 uCol; varying vec2 vUv;
 void main(){ vec2 gc = vUv * uGridN; vec2 fw = fwidth(gc); vec2 ln = 1. - smoothstep(vec2(0.), fw * 1.2, abs(fract(gc - .5) - .5));
   float l = max(ln.x, ln.y); gl_FragColor = vec4(uCol, l * .45 + .03); }`;
-const DOF_FS = `
-uniform sampler2D tCol; uniform vec2 uRes; uniform float uFocus, uRange, uNear, uFar, uMax; varying vec2 vUv; ${COC}
+const POST_FS = `
+uniform sampler2D tCol; uniform vec2 uRes; uniform float uFocus, uRange, uNear, uFar, uMax, uDof, uWater, uWScale, uWSpeed, uTime; uniform vec4 uRip; varying vec2 vUv; ${COC}
 void main(){
-  vec4 c0 = texture2D(tCol, vUv); float cc = cocAt(c0.a);
-  vec3 acc = c0.rgb; float ws = 1.;
+  vec2 uv = vUv;
+  if(uWater > 0.){
+    vec2 p = vec2(uv.x * uRes.x / uRes.y, uv.y) * (2. + uWScale * 10.); float t = uTime * (.15 + uWSpeed * 1.6);
+    vec2 d = vec2(sin(p.y * 1.7 + t + sin(p.x * 1.3 - t * .7) * 1.4), cos(p.x * 1.5 - t * .9 + sin(p.y * 1.1 + t * .6) * 1.3));
+    uv += d * uWater * .0045 * vec2(uRes.y / uRes.x, 1.);
+  }
+  if(uRip.w > .001){
+    vec2 dd = vUv * 2. - 1. - uRip.xy; dd.x *= uRes.x / uRes.y; float r = length(dd) + 1e-4, fr = uRip.z * 1.1;
+    float wv = sin((r - fr) * 22.) * exp(-abs(r - fr) * 6.) * uRip.w;
+    uv += (dd / r) * vec2(uRes.y / uRes.x, 1.) * wv * .006;
+  }
+  vec4 c0 = texture2D(tCol, uv);
+  if(uDof < .5){ gl_FragColor = vec4(c0.rgb, 1.); return; }
+  float cc = cocAt(c0.a); vec3 acc = c0.rgb; float ws = 1.;
   for(int i = 0; i < 32; i++){
     float fi = float(i) + .5, r = sqrt(fi / 32.), th = fi * 2.39996;
-    vec4 s = texture2D(tCol, vUv + vec2(cos(th), sin(th)) * r * uMax / uRes);
-    float sc = cocAt(s.a);
-    float eff = s.a < c0.a - .002 ? sc : min(sc, cc);
-    float w = smoothstep(r - .12, r, eff);
+    vec4 s = texture2D(tCol, uv + vec2(cos(th), sin(th)) * r * uMax / uRes);
+    float sc = cocAt(s.a), eff = s.a < c0.a - .002 ? sc : min(sc, cc), w = smoothstep(r - .12, r, eff);
     acc += s.rgb * w; ws += w;
   }
   gl_FragColor = vec4(acc / ws, 1.);
@@ -410,9 +471,14 @@ const _c1 = new THREE.Color(), _c2 = new THREE.Color(), _c3 = new THREE.Color();
 let STOPC = [];
 function parseStops(){ S.stops.sort((a, b) => a.t - b.t); S.stops[0].t = 0; S.stops[S.stops.length - 1].t = 1; STOPC = S.stops.map(s => ({t:s.t, c:new THREE.Color(s.c)})); }
 function gradAt(t, out){ t = clamp(t, 0, 1); for (let i = 0; i < STOPC.length - 1; i++) { const a = STOPC[i], b = STOPC[i+1]; if (t <= b.t) return out.copy(a.c).lerp(b.c, (t - a.t) / Math.max(1e-5, b.t - a.t)); } return out.copy(STOPC[STOPC.length - 1].c); }
-function colorAt(t, out){ gradAt(t, out); if (S.ambientAmt > 0) out.lerp(cAmb, S.ambientAmt); return out; }
+function colorAt(t, out){
+  gradAt(t, out); if (S.ambientAmt > 0) out.lerp(cAmb, S.ambientAmt);
+  if (S.darkness > 0) { const k = smooth(clamp((t - S.lightReach * .8) / .45, 0, 1)) * S.darkness; out.multiplyScalar(1 - k * .92); }
+  return out;
+}
 const accentWeight = t => Math.exp(-Math.pow((t - S.accentDepth) / .28, 2)) * .95;
 const coralWeight = t => S.coral * Math.exp(-Math.pow((t - S.accentDepth) / .3, 2));
+function lightDir(){ const a = S.lightAngle * Math.PI / 180; return [Math.cos(a), Math.sin(a)]; }
 
 /* ================= vector geometry helpers ================= */
 class GB {
@@ -452,78 +518,81 @@ function makeRec(Tf){
   };
 }
 
-/* ================= plants (vector) ================= */
+/* ================= plants (vector, procedural) ================= */
 const PT = (px, py) => [(px - 64) / 256, (254 - py) / 256];
 function plantGeometry(type, r){
   const g = new GB(PT), bx = 64, by = 254;
   if (type === 'kelp') {
-    const n = 40, top = 14 + r() * 26, sw = (r() - .5) * 26, pts = [];
-    for (let i = 0; i <= n; i++) { const t = i / n; pts.push([bx + Math.sin(t * 3.2) * 8 * t + sw * t * t, by - t * (by - top)]); }
-    g.stroke(pts, 6, 2.5);
-    for (let i = 3; i < n; i += 3) g.leaf(pts[i][0], pts[i][1], ((i / 3) % 2 ? 1 : -1) * (.8 + r() * .35), 24 * (1 - i / n * .45) + r() * 8, 4.5 + r() * 2.5);
+    const n = 40, top = 10 + r() * 40, sw = (r() - .5) * 34, wig = 2 + r() * 3, pts = [], lf = 2 + Math.floor(r() * 3), lw = 3 + r() * 4;
+    for (let i = 0; i <= n; i++) { const t = i / n; pts.push([bx + Math.sin(t * wig) * 8 * t + sw * t * t, by - t * (by - top)]); }
+    g.stroke(pts, 5 + r() * 3, 2);
+    for (let i = 3; i < n; i += lf) g.leaf(pts[i][0], pts[i][1], ((i / lf) % 2 ? 1 : -1) * (.7 + r() * .45), (18 + r() * 14) * (1 - i / n * .45), lw);
   } else if (type === 'grass') {
-    const blades = 5 + Math.floor(r() * 4);
-    for (let b = 0; b < blades; b++) { const ang = (r() - .5) * .8, len = 110 + r() * 125, w = 4 + r() * 4, off = (b - blades / 2) * 3;
-      const ex = bx + Math.sin(ang) * len * .7 + (r() - .5) * 18, ey = by - Math.cos(ang) * len, mx = bx + Math.sin(ang) * len * .25 + (r() - .5) * 22, my = by - len * .55;
-      const left = qpts(bx - w + off, by, mx - w * .6, my, ex, ey, 12), right = qpts(ex, ey, mx + w * .6, my, bx + w + off, by, 12).slice(1); g.poly(left.concat(right)); }
+    const blades = 4 + Math.floor(r() * 6), spread = .5 + r() * .7;
+    for (let b = 0; b < blades; b++) { const ang = (r() - .5) * spread, len = 90 + r() * 145, w = 3 + r() * 5, off = (b - blades / 2) * 3;
+      const ex = bx + Math.sin(ang) * len * .7 + (r() - .5) * 18, ey = by - Math.cos(ang) * len, mx = bx + Math.sin(ang) * len * .25 + (r() - .5) * 26, my = by - len * .55;
+      g.poly(qpts(bx - w + off, by, mx - w * .6, my, ex, ey, 12).concat(qpts(ex, ey, mx + w * .6, my, bx + w + off, by, 12).slice(1))); }
   } else if (type === 'fern') {
-    const n = 26, top = 24 + r() * 40, bend = (r() - .5) * 34, pts = [];
+    const n = 26, top = 20 + r() * 50, bend = (r() - .5) * 44, pts = [], la = .8 + r() * .5, ll = 22 + r() * 16;
     for (let i = 0; i <= n; i++) { const t = i / n; pts.push([bx + bend * t * t, by - t * (by - top)]); }
     g.stroke(pts, 4, 2);
-    for (let i = 2; i < n; i++) { const len = 30 * (1 - i / n) + 6; g.leaf(pts[i][0], pts[i][1], -1.05, len, 3.2); g.leaf(pts[i][0], pts[i][1], 1.05, len, 3.2); }
+    for (let i = 2; i < n; i++) { const len = ll * (1 - i / n) + 5; g.leaf(pts[i][0], pts[i][1], -la, len, 3); g.leaf(pts[i][0], pts[i][1], la, len, 3); }
   } else if (type === 'fan') {
+    const spr = .35 + r() * .3, dep = 4 + Math.floor(r() * 2), L0 = 36 + r() * 16, W0 = 6 + r() * 4;
     const br = (x0, y0, ang, len, w, d) => { const x1 = x0 + Math.sin(ang) * len, y1 = y0 - Math.cos(ang) * len; g.stroke(qpts(x0, y0, (x0 + x1) / 2 + (r() - .5) * len * .3, (y0 + y1) / 2, x1, y1, 6), w, w * .8);
-      if (d > 0) { const k = 2 + (r() < .35 ? 1 : 0); for (let i = 0; i < k; i++) br(x1, y1, ang + (i - (k - 1) / 2) * (.45 + r() * .3) + (r() - .5) * .2, len * (.7 + r() * .12), Math.max(1.3, w * .66), d - 1); } };
-    br(bx, by, (r() - .5) * .2, 42 + r() * 10, 8, 5);
+      if (d > 0) { const k = 2 + (r() < .35 ? 1 : 0); for (let i = 0; i < k; i++) br(x1, y1, ang + (i - (k - 1) / 2) * (spr + r() * .3) + (r() - .5) * .2, len * (.68 + r() * .14), Math.max(1.3, w * .66), d - 1); } };
+    br(bx, by, (r() - .5) * .2, L0, W0, dep);
   } else if (type === 'finger') {
+    const W0 = 13 + r() * 8;
     const br = (x0, y0, ang, len, w, d) => { const x1 = x0 + Math.sin(ang) * len, y1 = y0 - Math.cos(ang) * len; g.stroke([[x0, y0], [x1, y1]], w, w * .9);
-      if (d > 0) { const k = 2 + (r() < .5 ? 1 : 0); for (let i = 0; i < k; i++) br(x1, y1, ang + (i - (k - 1) / 2) * (.55 + r() * .3), len * (.75 + r() * .2), w * .82, d - 1); }
+      if (d > 0) { const k = 2 + (r() < .5 ? 1 : 0); for (let i = 0; i < k; i++) br(x1, y1, ang + (i - (k - 1) / 2) * (.5 + r() * .35), len * (.7 + r() * .25), w * .82, d - 1); }
       else g.circle(x1, y1, w * .62); };
-    br(bx, by, 0, 50 + r() * 14, 18, 2 + (r() < .5 ? 1 : 0));
+    br(bx, by, 0, 40 + r() * 24, W0, 2 + (r() < .5 ? 1 : 0));
   } else if (type === 'anemone') {
-    const n = 11 + Math.floor(r() * 6);
-    for (let i = 0; i < n; i++) { const a = -Math.PI * .9 + (i / (n - 1)) * Math.PI * .8, sx = bx + Math.cos(a) * 24, sy = by - 30 + Math.sin(a) * 18, len = 60 + r() * 50, ex = sx + Math.cos(a) * len * .5 + (r() - .5) * 20, ey = sy - len;
-      g.stroke(qpts(sx, sy, sx + (r() - .5) * 40, sy - len * .5, ex, ey, 8), 7, 5); g.circle(ex, ey, 4.5); }
-    const dome = []; for (let i = 0; i <= 16; i++) { const a = Math.PI + i / 16 * Math.PI; dome.push([bx + Math.cos(a) * 34, by - 2 + Math.sin(a) * 38]); } dome.push([bx + 34, by + 4], [bx - 34, by + 4]); g.poly(dome);
+    const n = 9 + Math.floor(r() * 9), tw = 4 + r() * 5, dw = 26 + r() * 14;
+    for (let i = 0; i < n; i++) { const a = -Math.PI * .9 + (i / (n - 1)) * Math.PI * .8, sx = bx + Math.cos(a) * dw * .7, sy = by - 30 + Math.sin(a) * 18, len = 50 + r() * 60, ex = sx + Math.cos(a) * len * .5 + (r() - .5) * 20, ey = sy - len;
+      g.stroke(qpts(sx, sy, sx + (r() - .5) * 40, sy - len * .5, ex, ey, 8), tw + 2, tw); g.circle(ex, ey, tw * .7); }
+    const dome = []; for (let i = 0; i <= 16; i++) { const a = Math.PI + i / 16 * Math.PI; dome.push([bx + Math.cos(a) * dw, by - 2 + Math.sin(a) * 36]); } dome.push([bx + dw, by + 4], [bx - dw, by + 4]); g.poly(dome);
   } else if (type === 'tube') {
-    const n = 3 + Math.floor(r() * 2);
-    for (let i = 0; i < n; i++) { const w = 15 + r() * 10, h = 70 + r() * 130, X = bx - 40 + i * (80 / (n - 1 || 1)) - w / 2 + (r() - .5) * 8, pts = [];
-      for (let k = 0; k <= 8; k++) { const a = Math.PI + k / 8 * Math.PI; pts.push([X + w / 2 + Math.cos(a) * w / 2, by - h + w / 2 + Math.sin(a) * w / 2]); } pts.push([X + w, by + 4], [X, by + 4]); g.poly(pts); }
+    const n = 2 + Math.floor(r() * 4);
+    for (let i = 0; i < n; i++) { const w = 12 + r() * 12, h = 60 + r() * 140, X = bx - 40 + i * (80 / (n - 1 || 1)) - w / 2 + (r() - .5) * 8, lean = (r() - .5) * 20, pts = [];
+      for (let k = 0; k <= 8; k++) { const a = Math.PI + k / 8 * Math.PI; pts.push([X + lean + w / 2 + Math.cos(a) * w / 2, by - h + w / 2 + Math.sin(a) * w / 2]); } pts.push([X + w, by + 4], [X, by + 4]); g.poly(pts); }
   } else if (type === 'grape') {
-    const stems = 3 + Math.floor(r() * 3);
-    for (let s = 0; s < stems; s++) { const ang = (r() - .5) * .8, len = 90 + r() * 110, ex = bx + Math.sin(ang) * len, ey = by - Math.cos(ang) * len;
+    const stems = 2 + Math.floor(r() * 4);
+    for (let s = 0; s < stems; s++) { const ang = (r() - .5) * .9, len = 80 + r() * 120, ex = bx + Math.sin(ang) * len, ey = by - Math.cos(ang) * len;
       g.stroke(qpts(bx, by, bx + Math.sin(ang) * len * .3, by - len * .6, ex, ey, 10), 3, 2.5);
-      for (let k = 0; k < 7; k++) { const t = .3 + k / 7 * .7; g.circle(lerp(bx, ex, t) + (r() - .5) * 10, lerp(by, ey, t), 4 + r() * 6 * (1 - t * .5)); } }
+      for (let k = 0; k < 7; k++) { const t = .3 + k / 7 * .7; g.circle(lerp(bx, ex, t) + (r() - .5) * 10, lerp(by, ey, t), 3 + r() * 7 * (1 - t * .5)); } }
   } else if (type === 'vine') {
-    const n = 40, top = 12 + r() * 30, sw = (r() - .5) * 30, pts = [];
-    for (let i = 0; i <= n; i++) { const t = i / n; pts.push([bx + Math.sin(t * 5) * 7 * t + sw * t, by - t * (by - top)]); }
+    const n = 40, top = 10 + r() * 40, sw = (r() - .5) * 34, pts = [];
+    for (let i = 0; i <= n; i++) { const t = i / n; pts.push([bx + Math.sin(t * (3 + r() * .1 + 2)) * 7 * t + sw * t, by - t * (by - top)]); }
     g.stroke(pts, 3.5, 1.5);
-    for (let i = 3; i < n - 2; i += 2) g.leaf(pts[i][0], pts[i][1], ((i / 2) % 2 ? 1 : -1) * (1.9 + r() * .4), 12 + r() * 6, 5 + r() * 2);
+    for (let i = 3; i < n - 2; i += 2) g.leaf(pts[i][0], pts[i][1], ((i / 2) % 2 ? 1 : -1) * (1.9 + r() * .4), 10 + r() * 8, 4 + r() * 3);
     const [tx, ty] = pts[n], curl = []; for (let k = 0; k <= 12; k++) { const a = Math.PI + k / 12 * Math.PI * 1.6, rr = 6 * (1 - k / 16); curl.push([tx + 5 + Math.cos(a) * rr, ty + Math.sin(a) * rr]); } g.stroke(curl, 1.8, 1.2);
   } else if (type === 'drape') {
-    const strands = 6 + Math.floor(r() * 4);
+    const strands = 5 + Math.floor(r() * 6), bead = 3.5 + r() * 2.5;
     g.poly([[bx - 46, by - 6], [bx + 46, by - 6], [bx + 46, by + 3], [bx - 46, by + 3]]);
-    for (let s = 0; s < strands; s++) { const sx = bx - 42 + s * (84 / (strands - 1)), len = 70 + r() * 160; let px = sx;
-      for (let y = by - 8; y > by - len; y -= 9) { px += (r() - .5) * 3; const t = (by - y) / len; g.ellipse(px, y, 4.5 * (1 - t * .5), 5.5 * (1 - t * .4), 0, 10); } }
+    for (let s = 0; s < strands; s++) { const sx = bx - 42 + s * (84 / (strands - 1)), len = 60 + r() * 170; let px = sx;
+      for (let y = by - 8; y > by - len; y -= bead * 2) { px += (r() - .5) * 3; const t = (by - y) / len; g.ellipse(px, y, bead * (1 - t * .5), bead * 1.2 * (1 - t * .4), 0, 10); } }
   } else if (type === 'roots') {
     const br = (x0, y0, ang, len, w, d) => { const x1 = x0 + Math.sin(ang) * len, y1 = y0 - Math.cos(ang) * len; g.stroke(qpts(x0, y0, (x0 + x1) / 2 + (r() - .5) * len * .35, (y0 + y1) / 2, x1, y1, 6), w, w * .75);
       if (d > 0) { const k = r() < .6 ? 2 : 1; for (let i = 0; i < k; i++) br(x1, y1, ang + (k === 1 ? (r() - .5) * .3 : (i - .5) * (.3 + r() * .25)), len * (.72 + r() * .2), Math.max(1.2, w * .7), d - 1); } };
-    for (let k = 0; k < 3; k++) br(bx + (k - 1) * 22, by, (k - 1) * .18, 55 + r() * 20, 7, 4);
+    const n = 2 + Math.floor(r() * 3); for (let k = 0; k < n; k++) br(bx + (k - (n - 1) / 2) * 22, by, (k - (n - 1) / 2) * .18, 45 + r() * 30, 6 + r() * 3, 4);
   } else {
-    const n = 2 + Math.floor(r() * 2);
-    for (let k = 0; k < n; k++) { const sx = bx + (k - (n - 1) / 2) * 24, len = 140 + r() * 100, w0 = 9 + r() * 5, fq = 2 + r() * 2, ph = r() * 6, Lp = [], Rp = [];
+    const n = 2 + Math.floor(r() * 3);
+    for (let k = 0; k < n; k++) { const sx = bx + (k - (n - 1) / 2) * 22, len = 120 + r() * 120, w0 = 8 + r() * 7, fq = 1.5 + r() * 2.5, ph = r() * 6, Lp = [], Rp = [];
       for (let i = 0; i <= 30; i++) { const t = i / 30, y = by - t * len, cx = sx + Math.sin(t * fq * 3.14 + ph) * 12 * t, w = w0 * (1 - t * .7); Lp.push([cx - w, y]); Rp.push([cx + w, y]); }
       g.poly(Lp.concat(Rp.reverse())); }
   }
   return g.build();
 }
 const PLANT_GEO = {};
-function plantGeo(type, v){ const k = type + v; if (!PLANT_GEO[k]) PLANT_GEO[k] = plantGeometry(type, mulberry32(hashStr(k) + S.seed)); return PLANT_GEO[k]; }
+function plantGeo(type, v){ const k = type + v + ':' + S.seed; if (!PLANT_GEO[k]) PLANT_GEO[k] = plantGeometry(type, mulberry32(hashStr(type + v) + S.seed)); return PLANT_GEO[k]; }
 
-/* ================= fish (vector, separate parts) ================= */
+/* ================= creatures (vector, separate parts, procedural) ================= */
 function buildFishModel(kind, r){
   const parts = []; let Tf = (x, y) => [x, y]; const x = makeRec((a, b) => Tf(a, b)); let bodyPts = null, mouth = [.5, 0];
   const frame = (x0, x1, cy) => { const L = x1 - x0, cx = (x0 + x1) / 2; Tf = (px, py) => [(px - cx) / L, -(py - cy) / L]; };
+  const frameV = (cx, y0, y1) => { const L = y1 - y0, cy = (y0 + y1) / 2; Tf = (px, py) => [(px - cx) / L, -(py - cy) / L]; };
   const add = (slot, anim, pvPx, z, mode, sil) => { const shapes = x.take(); if (!shapes.length) return null; const pv = pvPx ? Tf(pvPx[0], pvPx[1]) : [0, 0];
     const outline = shapes.map(s => s.getPoints(10).map(p => [p.x, p.y])); const geo = new THREE.ShapeGeometry(shapes, 10); geo.translate(-pv[0], -pv[1], 0);
     const p = {geo, slot, anim, pivot:pv, z, mode:mode || 0, outline, sil:sil !== false}; parts.push(p); return p; };
@@ -543,46 +612,47 @@ function buildFishModel(kind, r){
   const fin = (ax, ay, tx, ty, bx2, by2) => { x.beginPath(); x.moveTo(ax, ay); x.quadraticCurveTo(lerp(ax, tx, .3), ty, tx, ty); x.quadraticCurveTo(lerp(tx, bx2, .6), lerp(ty, by2, .7), bx2, by2); x.closePath(); };
   const profile = xl => { let top = -1e9, bot = 1e9; const n = bodyPts.length; for (let i = 0; i < n; i++) { const a = bodyPts[i], b = bodyPts[(i + 1) % n]; if ((a[0] - xl) * (b[0] - xl) <= 0 && a[0] !== b[0]) { const y = a[1] + (b[1] - a[1]) * (xl - a[0]) / (b[0] - a[0]); top = Math.max(top, y); bot = Math.min(bot, y); } } return top > bot ? [top, bot] : null; };
   const band = (xa, xb, fTop, fBot) => { const T = [], B = []; for (let k = 0; k <= 10; k++) { const xx = lerp(xa, xb, k / 10), pr = profile(xx); if (!pr) continue; T.push([xx, fTop(pr)]); B.push([xx, fBot(pr)]); } if (T.length > 2) x.poly(T.concat(B.reverse()), true); };
-  const bands = n => { for (let i = 0; i < n; i++) { const c = -.2 + i * .2 + (r() - .5) * .05, w = .04 + r() * .03; band(c - w, c + w, p => p[0] - .002, p => p[1] + .002); } };
-  const belly = () => band(-.46, .46, p => lerp(p[1], p[0], .36), p => p[1] + .002);
+  const bands = n => { for (let i = 0; i < n; i++) { const c = -.2 + i * .2 + (r() - .5) * .05, w = .03 + r() * .04; band(c - w, c + w, p => p[0] - .002, p => p[1] + .002); } };
+  const belly = () => band(-.46, .46, p => lerp(p[1], p[0], .3 + r() * .15), p => p[1] + .002);
   const spots = (n, rmin, rmax) => { for (let i = 0; i < n; i++) { const cx = -.35 + r() * .75, pr = profile(cx); if (!pr) continue; const half = (pr[0] - pr[1]) / 2, rr = Math.min(lerp(rmin, rmax, r()), half * .7), cy = (pr[0] + pr[1]) / 2 + (r() - .5) * (half - rr) * 1.6; x.ellipse(cx, cy, rr * (1 + r() * .5), rr, r() * 3, true); } };
-  const gill = () => { const gx = .5 - .22, pr = profile(gx); if (!pr) return; const pts = qpts(gx + .012, pr[0] * .62, gx - .03, (pr[0] + pr[1]) / 2, gx + .01, pr[1] * .62, 10); x.poly(strokeOutline(pts, .011, .006), true); };
+  const gill = () => { const gx = .5 - .22, pr = profile(gx); if (!pr) return; x.poly(strokeOutline(qpts(gx + .012, pr[0] * .62, gx - .03, (pr[0] + pr[1]) / 2, gx + .01, pr[1] * .62, 10), .011, .006), true); };
   const tailRays = (x0, cy, tl, th, L) => { for (const k of [-.45, 0, .45]) { const a = Tf(x0 - 6, cy + k * th * .2), b = Tf(x0 - tl * .62, cy + k * th * .9); x.poly(strokeOutline([a, [lerp(a[0], b[0], .5), lerp(a[1], b[1], .5)], b], 4 / L, 2 / L), true); } };
-  const std = (P, opts) => {
-    frame(P.x0, P.x1, P.cy); const L = P.x1 - P.x0, top = P.cy - P.H / 2, bot = P.cy + P.H / 2, tl = opts.tl, th = opts.th;
-    tail(P.x0, P.cy, P.ped, tl, th, opts.tail); add('B', 'tail', [P.x0 + 6, P.cy], -.02);
-    if (opts.rays) { tailRays(P.x0, P.cy, tl, th, L); add('D', 'tail', [P.x0 + 6, P.cy], -.015, 0, false); }
-    if (opts.dorsal) { const d = opts.dorsal; fin(P.x1 - L * d[0], top + d[1], P.x1 - L * d[2], top - d[3], P.x1 - L * d[4], P.cy - P.ped * .6); add('B', 'dorsal', [P.x1 - L * d[0], top + d[1] + 4], -.02); }
-    if (opts.anal) { const a = opts.anal; fin(P.x1 - L * a[0], bot - a[1], P.x1 - L * a[2], bot + a[3], P.x1 - L * a[4], P.cy + P.ped * .5); add('B', 'anal', [P.x1 - L * a[0], bot - a[1] - 4], -.02); }
-    if (opts.outline) { body(P, opts.outline); add('B', 'body', null, -.025, 1); }
+  const std = (P, o) => {
+    frame(P.x0, P.x1, P.cy); const L = P.x1 - P.x0, top = P.cy - P.H / 2, bot = P.cy + P.H / 2;
+    tail(P.x0, P.cy, P.ped, o.tl, o.th, o.tail); add('B', 'tail', [P.x0 + 6, P.cy], -.02);
+    if (o.rays) { tailRays(P.x0, P.cy, o.tl, o.th, L); add('D', 'tail', [P.x0 + 6, P.cy], -.015, 0, false); }
+    if (o.dorsal) { const d = o.dorsal; fin(P.x1 - L * d[0], top + d[1], P.x1 - L * d[2], top - d[3], P.x1 - L * d[4], P.cy - P.ped * .6); add('B', 'dorsal', [P.x1 - L * d[0], top + d[1] + 4], -.02); }
+    if (o.anal) { const a = o.anal; fin(P.x1 - L * a[0], bot - a[1], P.x1 - L * a[2], bot + a[3], P.x1 - L * a[4], P.cy + P.ped * .5); add('B', 'anal', [P.x1 - L * a[0], bot - a[1] - 4], -.02); }
+    if (o.outline) { body(P, o.outline); add('B', 'body', null, -.025, 1); }
     body(P); bodyPts = add('A', 'body', null, 0, 1).outline[0];
-    if (opts.deco) { opts.deco(); add('C', 'body', null, .004, 1, false); }
-    if (opts.gill) { gill(); add('D', 'body', null, .006, 1, false); }
-    if (opts.pect) { const p = opts.pect; fin(P.x1 - L * p[0], P.cy + p[1], P.x1 - L * p[2], P.cy + p[3], P.x1 - L * p[4], P.cy + p[5]); add('B', 'pect', [P.x1 - L * p[0], P.cy + p[1]], .012); }
-    if (opts.pelvic) { fin(P.x1 - L * .45, bot - 8, P.x1 - L * .58, bot + 22, P.x1 - L * .55, bot - 4); add('B', 'pelvic', [P.x1 - L * .45, bot - 8], -.018); }
+    if (o.deco) { o.deco(); add('C', 'body', null, .004, 1, false); }
+    if (o.gill) { gill(); add('D', 'body', null, .006, 1, false); }
+    if (o.pect) { const p = o.pect; fin(P.x1 - L * p[0], P.cy + p[1], P.x1 - L * p[2], P.cy + p[3], P.x1 - L * p[4], P.cy + p[5]); add('B', 'pect', [P.x1 - L * p[0], P.cy + p[1]], .012); }
+    if (o.pelvic) { fin(P.x1 - L * .45, bot - 8, P.x1 - L * .58, bot + 22, P.x1 - L * .55, bot - 4); add('B', 'pelvic', [P.x1 - L * .45, bot - 8], -.018); }
     mouth = [.5, Tf(0, P.cy + P.mouth)[1]];
   };
+  const tails = ['fork', 'lunate', 'round'];
   if (kind === 'reef' || kind === 'tiny') {
     const tiny = kind === 'tiny', v = r();
-    std({x0:118, x1:482, cy:132, H:tiny ? 120 : 140 + r() * 20, ped:32, hp:.42, blunt:.9, belly:1, mouth:6}, {tl:86, th:62 + r() * 10, tail:r() < .6 ? 'fork' : 'lunate', rays:!tiny,
-      dorsal:[.5, 10, .82 + r() * .05, 34 + r() * 14, .86], anal:tiny ? null : [.58, 10, .84, 26, .88], pect:[.2, 10, .42, 44, .3, 22], pelvic:!tiny,
-      deco:tiny ? null : (v < .4 ? belly : v < .75 ? () => bands(1 + Math.floor(r() * 2)) : null), gill:!tiny});
+    std({x0:118, x1:482, cy:132, H:tiny ? 100 + r() * 30 : 120 + r() * 50, ped:26 + r() * 12, hp:.35 + r() * .15, blunt:.7 + r() * .5, belly:.95 + r() * .15, mouth:6}, {tl:70 + r() * 30, th:50 + r() * 22, tail:tails[Math.floor(r() * (tiny ? 2 : 3))], rays:!tiny,
+      dorsal:[.45 + r() * .1, 10, .78 + r() * .1, 24 + r() * 30, .86], anal:tiny ? null : [.56 + r() * .06, 10, .84, 16 + r() * 18, .88], pect:[.2, 10, .42, 36 + r() * 16, .3, 22], pelvic:!tiny && r() < .7,
+      deco:tiny ? null : (v < .35 ? belly : v < .7 ? () => bands(1 + Math.floor(r() * 3)) : v < .85 ? () => spots(4 + Math.floor(r() * 5), .02, .05) : null), gill:!tiny});
   } else if (kind === 'tang' || kind === 'angel') {
-    const angel = kind === 'angel', P = {x0:angel ? 190 : 150, x1:angel ? 430 : 450, cy:256, H:angel ? 250 : 240, ped:40, hp:.5, blunt:1.05, belly:1, mouth:4};
-    std(P, {tl:angel ? 64 : 78, th:angel ? 56 : 72, tail:angel ? 'round' : 'lunate', rays:true, outline:angel ? 34 : 26,
-      dorsal:angel ? [.38, 6, 1.2, 104, .7] : null, anal:angel ? [.38, 6, 1.18, 100, .7] : null, pect:[.22, 6, .44, 46, .32, 18],
-      deco:() => bands(angel ? 2 + Math.floor(r() * 2) : 1), gill:true});
+    const angel = kind === 'angel', P = {x0:angel ? 190 : 150, x1:angel ? 430 : 450, cy:256, H:angel ? 220 + r() * 50 : 210 + r() * 50, ped:40, hp:.5, blunt:1.05, belly:1, mouth:4};
+    std(P, {tl:angel ? 64 : 78, th:angel ? 56 : 72, tail:angel ? 'round' : 'lunate', rays:true, outline:angel ? 26 + r() * 16 : 20 + r() * 12,
+      dorsal:angel ? [.38, 6, 1.1 + r() * .2, 80 + r() * 40, .7] : null, anal:angel ? [.38, 6, 1.1 + r() * .2, 80 + r() * 40, .7] : null, pect:[.22, 6, .44, 46, .32, 18],
+      deco:() => bands(angel ? 2 + Math.floor(r() * 2) : Math.floor(r() * 2) + 1), gill:true});
   } else if (kind === 'koi') {
-    std({x0:150, x1:494, cy:124, H:104, ped:30, hp:.36, blunt:1.25, belly:1.05, mouth:4}, {tl:128, th:76, tail:'flow', rays:true,
-      dorsal:[.45, 6, .78, 18, .85], pect:[.2, 20, .38, 92, .3, 30], pelvic:true, deco:() => spots(3, .05, .12), gill:false});
+    std({x0:150, x1:494, cy:124, H:90 + r() * 30, ped:30, hp:.36, blunt:1.25, belly:1.05, mouth:4}, {tl:110 + r() * 40, th:66 + r() * 22, tail:'flow', rays:true,
+      dorsal:[.45, 6, .78, 18, .85], pect:[.2, 20, .38, 80 + r() * 24, .3, 30], pelvic:true, deco:() => spots(2 + Math.floor(r() * 3), .05, .12), gill:false});
   } else if (kind === 'slim') {
-    std({x0:84, x1:502, cy:62, H:42, ped:12, hp:.56, blunt:.22, belly:1, mouth:4}, {tl:54, th:38, tail:'lunate', dorsal:[.7, 4, .86, 22, .82], anal:[.72, 4, .86, 18, .82],
+    std({x0:84, x1:502, cy:62, H:34 + r() * 16, ped:12, hp:.56, blunt:.22, belly:1, mouth:4}, {tl:54, th:38, tail:'lunate', dorsal:[.7, 4, .86, 22, .82], anal:[.72, 4, .86, 18, .82],
       deco:r() < .6 ? () => band(-.45, .45, p => (p[0] + p[1]) / 2 + .012, p => (p[0] + p[1]) / 2 - .012) : null});
   } else if (kind === 'puffer') {
-    std({x0:176, x1:430, cy:256, H:220, ped:46, hp:.46, blunt:1.45, belly:1.08, mouth:8}, {tl:64, th:52, tail:'round', dorsal:[.68, 10, .9, 26, .88], anal:[.68, 10, .9, 26, .88],
+    std({x0:176, x1:430, cy:256, H:200 + r() * 30, ped:46, hp:.46, blunt:1.45, belly:1.08, mouth:8}, {tl:64, th:52, tail:'round', dorsal:[.68, 10, .9, 26, .88], anal:[.68, 10, .9, 26, .88],
       pect:[.22, 4, .45, 34, .3, 16], deco:() => spots(22, .02, .045)});
   } else if (kind === 'shark') {
-    std({x0:150, x1:500, cy:122, H:86, ped:18, hp:.6, blunt:.5, belly:1.05, mouth:12}, {tl:120, th:64, tail:'shark', dorsal:[.42, 4, .66, 64, .64], anal:[.8, 4, .86, 14, .86],
+    std({x0:150, x1:500, cy:122, H:76 + r() * 20, ped:18, hp:.6, blunt:.5, belly:1.05, mouth:12}, {tl:120, th:64, tail:'shark', dorsal:[.42, 4, .66, 54 + r() * 20, .64], anal:[.8, 4, .86, 14, .86],
       pect:[.32, 18, .55, 82, .4, 26], deco:() => { for (let i = 0; i < 4; i++) { const gx = .2 - i * .03; x.poly(strokeOutline([[gx, .07], [gx - .012, 0], [gx, -.07]], .009, .009), true); } }});
   } else if (kind === 'whale') {
     std({x0:110, x1:500, cy:118, H:118, ped:22, hp:.6, blunt:1.1, belly:1.15, mouth:16}, {tl:92, th:62, tail:'lunate', dorsal:[.66, 4, .74, 24, .73], pect:[.32, 30, .55, 124, .4, 36],
@@ -593,16 +663,69 @@ function buildFishModel(kind, r){
     x.bezierCurveTo(286, 152, 318, 196, 300, 244); x.bezierCurveTo(390, 230, 450, 172, 496, 128); x.closePath(); add('A', 'body', null, 0, 3);
     x.poly(strokeOutline(qpts(204, 128, 110, 122, 14, 134, 16).map(p => Tf(p[0], p[1])), 6 / 300, 2 / 300), true); add('B', 'none', null, -.01);
     fin(488, 120, 506, 96, 476, 116); add('B', 'none', null, .01);
-    mouth = [.5, 0];
+  } else if (kind === 'eel') {
+    const n = 56, top = [], bot = [], finT = [], w0 = .035 + r() * .02;
+    for (let i = 0; i <= n; i++) { const s = i / n, xl = .5 - s; const w = Math.max(.003, s < .06 ? w0 * Math.sqrt(s / .06 + .05) : w0 * (1 - .8 * Math.pow((s - .06) / .94, 1.3))); top.push([xl, w]); bot.push([xl, -w * .9]); if (s > .15) finT.push([xl, w + (.018 + r() * 0) * (1 - .5 * s) * Math.min(1, (s - .15) * 10)]); }
+    x.poly(top.concat(bot.slice().reverse()), true); add('A', 'body', null, 0, 6);
+    x.poly(finT.concat(top.filter((q, i) => i / n > .15).reverse()), true); add('B', 'body', null, -.01, 6);
+    if (r() < .6) { for (let k = 0; k < 6; k++) { const xl = .3 - k * .12; x.ellipse(xl, 0, .012, .008 + w0 * .3, 0, true); } add('C', 'body', null, .004, 6, false); }
+  } else if (kind === 'seahorse') {
+    frameV(128, 40, 470);
+    x.beginPath(); x.moveTo(214, 98); x.quadraticCurveTo(196, 84, 170, 82); x.bezierCurveTo(160, 56, 120, 44, 104, 76); x.bezierCurveTo(94, 100, 106, 128, 112, 150);
+    x.bezierCurveTo(96, 190, 92, 250, 112, 300); x.bezierCurveTo(124, 330, 150, 330, 156, 300); x.bezierCurveTo(166, 250, 160, 190, 146, 150); x.quadraticCurveTo(150, 116, 168, 106); x.quadraticCurveTo(196, 108, 214, 108); x.closePath();
+    add('A', 'none', null, 0);
+    const sp = []; let ang = 0, rad = 0; for (let k = 0; k <= 40; k++) { const t = k / 40; if (t < .45) sp.push([lerp(134, 132, t / .45), lerp(300, 400, t / .45)]); else { const u = (t - .45) / .55; ang = u * Math.PI * 1.6; rad = 26 * (1 - u * .6); sp.push([132 + 26 - Math.cos(ang) * rad, 400 + Math.sin(ang) * rad]); } }
+    x.poly(strokeOutline(sp.map(p => Tf(p[0], p[1])), 34 / 430, 6 / 430), true); add('A', 'none', null, -.002);
+    fin(96, 190, 70, 210, 98, 240); add('B', 'flutter', [98, 214], -.01);
+    for (let k = 0; k < 7; k++) { const yy = 160 + k * 20; x.poly(strokeOutline([Tf(104 + k * .5, yy), Tf(150 - k * 1.5, yy + 4)], 3 / 430, 3 / 430), true); } add('D', 'none', null, .004, 0, false);
+    x.poly([[98, 72], [92, 50], [112, 62]], false); x.poly([[118, 52], [124, 30], [134, 50]], false); add('A', 'none', null, -.004);
+    mouth = Tf(214, 103);
+  } else if (kind === 'turtle') {
+    frame(150, 470, 130);
+    fin(352, 150, 230 + r() * 20, 236, 316, 158); add('B', 'flipF', [352, 146], -.02);
+    fin(184, 150, 122, 196, 170, 160); add('B', 'flipR', [182, 148], -.02);
+    x.beginPath(); x.moveTo(380, 120); x.quadraticCurveTo(412, 112, 440, 118); x.quadraticCurveTo(472, 126, 466, 140); x.quadraticCurveTo(450, 152, 412, 150); x.quadraticCurveTo(390, 148, 372, 144); x.closePath(); add('A', 'head', [380, 132], -.01);
+    x.beginPath(); x.moveTo(150, 150); x.bezierCurveTo(160, 82, 230, 60, 290, 62); x.bezierCurveTo(350, 64, 398, 96, 396, 150); x.quadraticCurveTo(272, 162, 150, 150); x.closePath(); bodyPts = add('A', 'none', null, 0).outline[0];
+    x.beginPath(); x.moveTo(166, 150); x.quadraticCurveTo(272, 172, 382, 150); x.quadraticCurveTo(272, 158, 166, 150); x.closePath(); add('C', 'none', null, .003, 0, false);
+    const sc = [[210, 92, 250, 70, 300, 70, 270, 112], [300, 70, 350, 86, 360, 120, 300, 118], [200, 140, 214, 100, 270, 112, 260, 146], [270, 112, 300, 118, 340, 146, 262, 146]];
+    for (const q of sc) x.poly(strokeOutline([Tf(q[0], q[1]), Tf(q[2], q[3]), Tf(q[4], q[5]), Tf(q[6], q[7]), Tf(q[0], q[1])], 4 / 320, 4 / 320), true);
+    add('D', 'none', null, .005, 0, false);
+    mouth = Tf(466, 134);
   } else if (kind === 'jelly') {
     frame(28, 228, 120);
-    x.beginPath(); x.moveTo(28, 168); x.bezierCurveTo(24, 12, 232, 12, 228, 168);
-    for (let k = 6; k > 0; k--) { const xa = 28 + (k - 1) * 200 / 6, xm = xa + 100 / 6; x.quadraticCurveTo(xm, 192, xa, 168); }
-    x.closePath(); add('A', 'none', null, 0, 0);
-    for (let k = 0; k < 7; k++) { const sx = 40 + k * 29, pts = [[sx, 172]]; let px = sx; for (let y = 200; y < 500; y += 22) { px += (r() - .5) * 14; pts.push([px, y]); } x.poly(strokeOutline(pts.map(p => Tf(p[0], p[1])), .022, .01), true); }
+    x.beginPath(); x.moveTo(28, 168); x.bezierCurveTo(24 + r() * 10, 6 + r() * 20, 232 - r() * 10, 6 + r() * 20, 228, 168);
+    for (let k = 8; k > 0; k--) { const xa = 28 + (k - 1) * 200 / 8, xm = xa + 100 / 8; x.quadraticCurveTo(xm, 186, xa, 168); }
+    x.closePath(); add('A', 'none', null, 0, 5);
+    x.beginPath(); x.moveTo(62, 166); x.bezierCurveTo(70, 70, 186, 70, 194, 166); x.quadraticCurveTo(128, 150, 62, 166); x.closePath(); add('C', 'none', null, .004, 5, false);
+    const nt = 9 + Math.floor(r() * 6);
+    for (let k = 0; k < nt; k++) { const sx = 38 + k * (180 / (nt - 1)), len = 260 + r() * 200, pts = []; let px = sx; for (let y = 172; y < 172 + len; y += 18) { px += (r() - .5) * 8; pts.push([px, y]); } x.poly(strokeOutline(pts.map(p => Tf(p[0], p[1])), .016, .004), true); }
     add('B', 'none', null, -.01, 2, false);
-    for (const sx of [104, 152]) { const pts = []; for (let y = 172; y < 390; y += 12) pts.push([sx + Math.sin(y * .08) * 10, y]); x.poly(strokeOutline(pts.map(p => Tf(p[0], p[1])), .06, .025), true); }
+    for (const sx of [100, 128, 156]) { const pts = [], len = 180 + r() * 90; for (let y = 168; y < 168 + len; y += 8) pts.push([sx + Math.sin(y * .09 + sx) * 12, y]); x.poly(strokeOutline(pts.map(p => Tf(p[0], p[1])), .07, .02), true); }
     add('C', 'none', null, -.005, 2, false);
+  } else if (kind === 'crab') {
+    frame(166, 346, 150);
+    for (const side of [-1, 1]) for (let i = 0; i < 3; i++) {
+      const bx0 = 256 + side * (62 + i * 10), by0 = 160 + i * 4, kx = bx0 + side * (44 + i * 8), ky = by0 - 22 + i * 6, fx = kx + side * (16 - i * 3), fy = ky + 64 - i * 6;
+      x.poly(strokeOutline([Tf(bx0, by0), Tf(kx, ky)], 14 / 180, 11 / 180), true); x.poly(strokeOutline([Tf(kx, ky), Tf(fx, fy)], 11 / 180, 3 / 180), true);
+      const p = add('B', 'leg', [bx0, by0], -.02); p.idx = i; p.side = side;
+    }
+    for (const side of [-1, 1]) {
+      const ax = 256 + side * 52, ay = 128, ex = 256 + side * 104, ey = 92;
+      x.poly(strokeOutline([Tf(ax, ay), Tf(lerp(ax, ex, .5), ay - 30), Tf(ex, ey)], 18 / 180, 14 / 180), true);
+      x.ellipse(256 + side * 122, 74, 30, 19, side * -.5); const c = add('B', 'claw', [ax, ay], -.01); c.side = side;
+      x.poly([Tf(256 + side * 128, 62), Tf(256 + side * 162, 50), Tf(256 + side * 150, 70)]); const j = add('B', 'jaw', [ax, ay], -.012); j.side = side;
+    }
+    x.beginPath(); x.moveTo(170, 158); x.bezierCurveTo(168, 110, 214, 96, 256, 96); x.bezierCurveTo(298, 96, 344, 110, 342, 158); x.quadraticCurveTo(300, 182, 256, 182); x.quadraticCurveTo(212, 182, 170, 158); x.closePath();
+    add('A', 'none', null, 0);
+    for (let k = 0; k < 5; k++) x.ellipse(206 + k * 25, 120 + Math.abs(k - 2) * 4, 6, 4, 0); add('C', 'none', null, .004, 0, false);
+    mouth = [0, -.1];
+  } else if (kind === 'starfish') {
+    frame(156, 356, 150);
+    const pts = [], rot = r() * .6, arm = .5 + r() * .5;
+    for (let k = 0; k < 80; k++) { const a = k / 80 * Math.PI * 2, rr = 32 + 66 * Math.pow(.5 + .5 * Math.cos(5 * (a - rot)), 1.6 + arm); pts.push([256 + Math.cos(a) * rr, 150 + Math.sin(a) * rr]); }
+    x.poly(pts); add('A', 'none', null, 0, 7);
+    for (let a = 0; a < 5; a++) for (let k = 1; k < 5; k++) { const an = rot + a * Math.PI * 2 / 5, rr = 14 + k * 15; x.ellipse(256 + Math.cos(an) * rr, 150 + Math.sin(an) * rr, 4.5 - k * .6, 4.5 - k * .6, 0); }
+    add('C', 'none', null, .004, 7, false);
   }
   // soft shadow texture from the silhouette
   let mnx = 1e9, mny = 1e9, mxx = -1e9, mxy = -1e9;
@@ -617,12 +740,11 @@ function buildFishModel(kind, r){
   return {parts, mouth, shadow:{tex:st, w:cw / sx, h:ch / sx, cx:ox + cw / sx / 2, cy:oy - ch / sx / 2}};
 }
 const MODELS = {};
-function fishModel(kind, v){ const k = kind + v; if (!MODELS[k]) MODELS[k] = buildFishModel(kind, mulberry32(hashStr(k))); return MODELS[k]; }
+function fishModel(kind, v){ const k = kind + v; if (!MODELS[k]) MODELS[k] = buildFishModel(kind, mulberry32(hashStr(k) + 99)); return MODELS[k]; }
 function flatMat(mode, sharedU){
-  const m = new THREE.ShaderMaterial({ uniforms:Object.assign({ uTime:shared.uTime, uCurrent:shared.uCurrent, uSway:shared.uSway, uMode:{value:mode}, uColor:{value:new THREE.Color()},
-    uDepthT:{value:0}, uOpacity:{value:1}, uPhase:{value:0}, uBeat:{value:0}, uTurn:{value:0}, uFlip:{value:1}, uFlex:{value:1}, uPlantPhase:{value:0} }, sharedU || {}),
+  return new THREE.ShaderMaterial({ uniforms:Object.assign({ uTime:shared.uTime, uCurrent:shared.uCurrent, uSway:shared.uSway, uMode:{value:mode}, uColor:{value:new THREE.Color()},
+    uDepthT:{value:0}, uOpacity:{value:1}, uPhase:{value:0}, uBeat:{value:0}, uTurn:{value:0}, uFlip:{value:1}, uFlex:{value:1}, uPlantPhase:{value:0}, uPulse:{value:0}, uVelX:{value:0} }, sharedU || {}),
     vertexShader:FLAT_VS, fragmentShader:FLAT_FS, side:THREE.DoubleSide });
-  return m;
 }
 
 /* ================= sheets ================= */
@@ -630,10 +752,11 @@ const planeGeo = new THREE.PlaneGeometry(1, 1);
 let layers = [];
 function makeSheetMaterial(){
   return new THREE.ShaderMaterial({
-    uniforms:{ uTime:shared.uTime, uRes:shared.uRes, uRipple:shared.uRipple, uLightCol:shared.uLightCol, uGrain:shared.uGrain, uCaustic:shared.uCaustic, uRim:shared.uRim, uShadowStr:shared.uShadowStr, uShadowSoftW:shared.uShadowSoftW,
-      uGlowCol:shared.uGlowCol, uGlow:shared.uGlow, uGlowSize:shared.uGlowSize, uGlowSpill:shared.uGlowSpill, uGlowC:shared.uGlowC,
+    uniforms:{ uTime:shared.uTime, uRes:shared.uRes, uRipple:shared.uRipple, uLightCol:shared.uLightCol, uGrain:shared.uGrain, uCaustic:shared.uCaustic, uRim:shared.uRim, uShadowStr:shared.uShadowStr, uShadowSoftW:shared.uShadowSoftW, uLightDir:shared.uLightDir,
+      uGlowCol:shared.uGlowCol, uGlow:shared.uGlow, uGlowSize:shared.uGlowSize, uGlowSpill:shared.uGlowSpill, uGlowC:shared.uGlowC, uWobble:shared.uWobble, uWobSpeed:shared.uWobSpeed, uCurrent:shared.uCurrent, uSway:shared.uSway,
       uLow:{value:null}, uPrev:{value:null}, uHasPrev:{value:0}, uPrevScale:{value:new THREE.Vector2(1,1)}, uShadowOff:{value:new THREE.Vector2()}, uShadowR:{value:new THREE.Vector2()}, uShadowBias:{value:2},
-      uColor:{value:new THREE.Color()}, uViewH:{value:1}, uT:{value:0}, uDim:{value:1}, uIsBack:{value:0}, uLowTexel:{value:1 / 512}, uSize:{value:new THREE.Vector2(1,1)}, uSeed:{value:Math.random() * 50} },
+      uColor:{value:new THREE.Color()}, uViewH:{value:1}, uT:{value:0}, uDim:{value:1}, uIsBack:{value:0}, uLowTexel:{value:1 / 512}, uSize:{value:new THREE.Vector2(1,1)}, uSeed:{value:Math.random() * 50},
+      uHalf:{value:new THREE.Vector2(1,1)}, uPlant:{value:0}, uFlex:{value:1}, uFlip:{value:1}, uPlantPhase:{value:0}, uNoRim:{value:0} },
     vertexShader:SHEET_VS, fragmentShader:SHEET_FS, side:THREE.DoubleSide
   });
 }
@@ -641,8 +764,13 @@ function makeLayer(){ const mat = makeSheetMaterial(); const mesh = new THREE.Me
   return {mat, mesh, grid:null, gx:0, gy:GY, edited:false, nudge:0, tex:null, data:null, texW:0, texH:0, plants:[], seed:(Math.random() * 1e6) | 0, t:0, z:0, hw:1, hh:1, vh:1, color:new THREE.Color()}; }
 function disposeLayer(L){ removePlants(L); scene.remove(L.mesh); L.mat.dispose(); L.mesh.geometry.dispose(); if (L.tex) L.tex.dispose(); queue.delete(L); }
 function panMax(){ return .25 + S.lookAround * 2.4; }
-function viewHalfH(z, cz, fov){ return Math.tan((fov || BASE_FOV) * Math.PI / 360) * ((cz || BASE_Z) - z); }
-function coverHalf(z){ const zoom = S.pinchMode === 'zoom'; const fov = zoom ? 56 : BASE_FOV, cz = zoom ? BASE_Z : BASE_Z * 1.4, m = panMax() + .7; const hh = Math.tan(fov * Math.PI / 360) * (cz - z); return {hw:hh * aspect + m, hh:hh + m}; }
+function viewHalfH(z, cz, fov){ return Math.tan((fov || baseFov()) * Math.PI / 360) * ((cz || baseZ()) - z); }
+function bobMargin(){ return Math.max(S.bobX * .32, S.bobY * .3) + .1; }
+function coverHalf(z){
+  const zoom = S.pinchMode === 'zoom', fov = zoom ? Math.min(85, baseFov() * 1.4) : baseFov(), cz = zoom ? baseZ() : baseZ() * 1.4;
+  const [ox, oy] = viewOff(), m = panMax() + .7 + bobMargin(), hh = Math.tan(fov * Math.PI / 360) * (cz - z), sh = 1 + (-z) / baseZ(), roll = S.bobRoll * .045 * hh * aspect;
+  return {hw:hh * aspect + m + roll + Math.abs(ox) * sh, hh:hh + m + roll + Math.abs(oy) * sh};
+}
 function computeT(){ const N = layers.length, base = []; for (let i = 0; i < N; i++) base.push(Math.pow(i / (N - 1), S.curve));
   return base.map((b, i) => { const n = layers[i].nudge || 0; const gp = i > 0 ? b - base[i-1] : .12, gn = i < N - 1 ? base[i+1] - b : .25; return b + (n > 0 ? n * gn : n * gp) * .45; }); }
 function depthScale(z){ return Math.pow(viewHalfH(z) / viewHalfH(-S.depth * .25), .6); }
@@ -652,52 +780,75 @@ function applyLayout(full){
   const N = layers.length, ts = computeT();
   layers.forEach((L, i) => { L.t = ts[i]; L.z = -ts[i] * S.depth; const c = coverHalf(L.z); L.hw = c.hw; L.hh = c.hh; L.vh = viewHalfH(L.z);
     L.mesh.position.z = L.z; L.mesh.scale.set(L.hw * 2, L.hh * 2, 1);
-    const U = L.mat.uniforms; U.uViewH.value = L.vh; U.uT.value = clamp(L.t, 0, 1); U.uIsBack.value = i === N - 1 ? 1 : 0; U.uSize.value.set(L.hw * 2 / L.vh * 5, L.hh * 2 / L.vh * 5); });
+    const U = L.mat.uniforms; U.uViewH.value = L.vh; U.uT.value = clamp(L.t, 0, 1); U.uIsBack.value = i === N - 1 ? 1 : 0; U.uHalf.value.set(L.hw, L.hh); U.uSize.value.set(L.hw * 2 / L.vh * 5, L.hh * 2 / L.vh * 5); });
   shared.uDepth.value = S.depth;
   refreshPrevRefs(); updateColors(); positionPlants();
-  if (full) { rebuildParticles(); layoutRays(); rebuildBubbles(); }
+  if (full) { rebuildParticles(); layoutRays(); rebuildBubbles(); placeCrawlers(); }
 }
 function refreshPrevRefs(){
-  shared.uShadowSoftW.value = .08 + S.shadowSoft * .3;
+  const s = S.shadowSoft; shared.uShadowSoftW.value = .08 + Math.min(s, 1) * .3 + Math.max(0, s - 1) * .06;
+  const [lx, ly] = lightDir(); shared.uLightDir.value.set(lx, ly);
   layers.forEach((L, i) => { const U = L.mat.uniforms; U.uLow.value = L.tex; U.uLowTexel.value = 1 / Math.max(64, L.texW || 512); if (i === 0) { U.uHasPrev.value = 0; return; } const P = layers[i-1];
     U.uPrev.value = P.tex; U.uHasPrev.value = P.tex ? 1 : 0; U.uPrevScale.value.set(L.hw / P.hw, L.hh / P.hh);
-    const dist = (.01 + S.shadowDist * .07) * P.vh, blur = (.006 + S.shadowSoft * .05) * P.vh;
-    U.uShadowOff.value.set(-(dist * .35) / (2 * P.hw), dist / (2 * P.hh)); U.uShadowR.value.set(blur / (2 * P.hw), blur / (2 * P.hh));
+    const dist = (.01 + S.shadowDist * .07) * P.vh, blur = (.006 + s * .05) * P.vh;
+    U.uShadowOff.value.set(lx * dist / (2 * P.hw), ly * dist / (2 * P.hh)); U.uShadowR.value.set(blur / (2 * P.hw), blur / (2 * P.hh));
     U.uShadowBias.value = Math.log2(Math.max(1, blur / (2 * P.hh) * (P.texH || 256) * .7)); });
 }
 function seedForT(t){ return (Math.imul(S.seed | 0, 7919) + Math.imul(Math.round(t * 997), 104729)) | 0; }
 function tunnelCenterBack(){ return [S.tBackX * aspect, S.tBackY]; }
+function windowList(){
+  const r = mulberry32((S.seed | 0) ^ 0x51ed), W = [];
+  for (let k = 0; k < S.windows; k++) {
+    const a = r() * Math.PI * 2, rad = .45 + r() * .5 * S.winSpread + (S.shapeMode === 'tunnel' ? Math.max(S.tFrontW, S.tFrontH) * .55 : 0);
+    W.push({x:Math.cos(a) * rad * (S.shapeMode === 'tunnel' ? .9 : S.winSpread), y:Math.sin(a) * rad * .7 * (S.shapeMode === 'tunnel' ? 1 : S.winSpread), s:S.winSize * (.5 + r() * .7), d:S.winDepth * (.6 + r() * .6), dx:(r() - .5) * .3, dy:(r() - .5) * .3, sd:(r() * 1e6) | 0});
+  }
+  return W;
+}
 function proceduralGrid(L, idx, N){
   const gx = L.gx, gy = L.gy, g = new Uint8Array(gx * gy);
-  if (idx === N - 1) { g.fill(1); return g; }
-  const u = idx / (N - 1), sd = seedForT(u), r = mulberry32(sd), vw = L.vh * aspect, vh = L.vh;
+  if (idx === N - 1) { g.fill(255); return g; }
+  const u = idx / (N - 1), sd = seedForT(u), r = mulberry32(sd), vw = L.vh * aspect, vh = L.vh, mode = S.shapeMode;
   const su = Math.pow(u, S.tSizeCurve), bu = Math.pow(u, S.tBend), rh = 1 + S.tRhythm * .14 * ((idx % 2) ? 1 : -1), js = 1 + (r() * 2 - 1) * S.tJitterSize;
   const bx = lerp(S.tFrontW, S.tBackW, su) * rh * js * aspect, by = lerp(S.tFrontH, S.tBackH, su) * rh * js;
   const pcx = (lerp(S.tFrontX, S.tBackX, bu) + (r() * 2 - 1) * S.tJitterOffset) * aspect, pcy = lerp(S.tFrontY, S.tBackY, bu) + (r() * 2 - 1) * S.tJitterOffset;
   const mn = Math.max(.05, Math.min(bx, by)), rad = S.tCorner * mn, wf = .6 + (1 - S.tWobbleSize) * 5, wa = S.tWobble * mn * .6, bul = S.tBulge * .3;
-  const rocks = []; if (S.tunnel && r() < S.rocks * .9) { const n = 1 + (r() < S.rocks * .5 ? 1 : 0); for (let k = 0; k < n; k++) rocks.push({x:pcx + (r() * 2 - 1) * bx * .7, y:pcy - by * (.45 + r() * .35), rx:mn * (.08 + r() * .14), ry:mn * (.12 + r() * .22)}); }
-  const holes = []; const nh = Math.round(S.holes * (2 + r() * 5)); for (let k = 0; k < nh; k++) { const a = r() * Math.PI * 2, f = 1.1 + r() * .35; holes.push({x:pcx + Math.cos(a) * bx * f, y:pcy + Math.sin(a) * by * f, r:mn * (.03 + r() * .06)}); }
-  const fBase = -1 + .12 + Math.pow(u, .85) * .78 + (r() - .5) * .2, wl = r() < .5 ? r() * .3 * (1 - u * .5) : -9, wr = r() < .5 ? r() * .3 * (1 - u * .5) : -9;
+  const ref = mode === 'tunnel' ? mn : .6;
+  const floorY = mode === 'tunnel' ? pcy - by + S.seabed * by * 1.15 : -1 + .1 + Math.pow(u, .85) * .7 + (S.seabed - .3) * .5 + (r() - .5) * .15;
+  const hillA = mode === 'tunnel' ? S.hills * by * .6 : .1 + S.hills * .35;
+  const rocks = []; if (r() < S.rocks * .9) { const n = 1 + (r() < S.rocks * .5 ? 1 : 0); for (let k = 0; k < n; k++) { const rx = (mode === 'tunnel' ? pcx + (r() * 2 - 1) * bx * .7 : (r() * 2 - 1) * aspect * .9); rocks.push({x:rx, y:floorY + .05, rx:ref * (.08 + r() * .14), ry:ref * (.12 + r() * .22)}); } }
+  const holes = []; const nh = Math.round(S.holes * (2 + r() * 6));
+  for (let k = 0; k < nh; k++) { const a = r() * Math.PI * 2; if (mode === 'tunnel') { const f = 1.1 + r() * .4; holes.push({x:pcx + Math.cos(a) * bx * f, y:pcy + Math.sin(a) * by * f, r:mn * (.03 + r() * .07)}); } else holes.push({x:(r() * 2 - 1) * aspect, y:(r() * 2 - 1), r:.03 + r() * .06}); }
+  const wins = windowList().filter(w => u <= w.d).map(w => { const k = u / Math.max(.01, w.d); return {x:(w.x + w.dx * k) * aspect, y:w.y + w.dy * k, s:w.s * (1 - k * .55), sd:w.sd}; });
+  const wd = S.wDir * Math.PI / 180, dvx = Math.cos(wd), dvy = Math.sin(wd), wEdge = 1.35 - lerp(S.wFront, S.wBack, su) * 1.7, wph = r() * 6, wfq = 1 + S.wFreq * 5;
+  const wl = r() < .5 ? r() * .3 * (1 - u * .5) : -9, wr = r() < .5 ? r() * .3 * (1 - u * .5) : -9;
   for (let j = 0; j < gy; j++) for (let i = 0; i < gx; i++) {
-    const nx = ((i + .5) / gx - .5) * 2 * L.hw / vw, ny = ((j + .5) / gy - .5) * 2 * L.hh / vh, px = nx * aspect - pcx, py = ny - pcy;
+    const nx = ((i + .5) / gx - .5) * 2 * L.hw / vw, ny = ((j + .5) / gy - .5) * 2 * L.hh / vh, ax = nx * aspect;
     let v = 0;
-    if (S.tunnel) {
+    if (mode === 'tunnel') {
+      const px = ax - pcx, py = ny - pcy;
       const ex = bx * (1 + bul * (1 - Math.min(1, (py / by) ** 2))), ey = by * (1 + bul * (1 - Math.min(1, (px / bx) ** 2))), rr = Math.min(rad, ex, ey);
       const qx = Math.abs(px) - (ex - rr), qy = Math.abs(py) - (ey - rr);
       let d = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - rr;
       if (wa > 0) d += (fbm(px * wf + 11, py * wf + 7, sd, 3) - .5) * 2 * wa;
       v = .5 + d * 3;
-      if (S.seabed > 0) { const fy = pcy - by + S.seabed * by * 1.15 + (fbm(px * 1.4 + 3, .5, sd + 7, 3) - .5) * 2 * S.hills * by * .6; v = Math.max(v, .5 + (fy - ny) * 3); }
       if (S.stalactites > 0) { const sp = Math.pow(fbm(px * 3.6 + 9, 2.1, sd + 17, 2), 4) * 2.2 * S.stalactites * by; v = Math.max(v, .5 + (ny - (pcy + by - sp)) * 3); }
-      for (const R of rocks) { const dx = (nx * aspect - R.x) / R.rx, dy = (ny - R.y) / R.ry; v = Math.max(v, .5 + (1 - Math.sqrt(dx * dx + dy * dy)) * .8); if (ny < R.y) v = Math.max(v, .5 + (R.rx * .6 - Math.abs(nx * aspect - R.x)) / R.rx); }
+    } else if (mode === 'waves') {
+      const q = ax * dvx + ny * dvy, pr = -ax * dvy + ny * dvx;
+      const wv = Math.sin(pr * wfq + wph) * S.wAmp * .35 + (fbm(pr * wf + 3, q * 1.3, sd, 3) - .5) * 2 * S.tWobble * .4;
+      v = .5 + (q - wEdge + wv) * 3;
+      if (S.stalactites > 0) { const cy = 1.05 - Math.pow(fbm(nx * 3.6, 9.1, sd + 17, 2), 4) * 2.4 * S.stalactites; v = Math.max(v, .5 + (ny - cy) * 2.5); }
     } else {
-      const fy = fBase + (S.seabed - .3) * .5 + (fbm(nx * (.6 + S.hills * 1.4) + 10, .5, sd, 3) - .5) * 2 * (.12 + S.hills * .35); v = Math.max(v, .5 + (fy - ny) * 2.5);
       if (wl > -1) v = Math.max(v, .5 + ((-1 + wl + (fbm(ny * 1.3, 3.3, sd + 5, 3) - .5) * .4) - nx) * 2.5);
       if (wr > -1) v = Math.max(v, .5 + (nx - (1 - wr - (fbm(ny * 1.3, 7.7, sd + 9, 3) - .5) * .4)) * 2.5);
       if (S.stalactites > 0) { const cy = 1.05 - Math.pow(fbm(nx * 3.6, 9.1, sd + 17, 2), 4) * 2.4 * S.stalactites; v = Math.max(v, .5 + (ny - cy) * 2.5); }
     }
-    if (v > .5) for (const Hh of holes) v = Math.min(v, .5 + (Math.hypot(nx * aspect - Hh.x, ny - Hh.y) - Hh.r) * 6);
-    g[j * gx + i] = v > .5 ? 1 : 0;
+    if (S.seabed > 0 || mode === 'open') { const fy = floorY + (fbm(ax * (mode === 'tunnel' ? 1.4 : .6 + S.hills * 1.4) + 3, .5, sd + 7, 3) - .5) * 2 * hillA; v = Math.max(v, .5 + (fy - ny) * 3); }
+    for (const R of rocks) { const dx = (ax - R.x) / R.rx, dy = (ny - R.y) / R.ry; v = Math.max(v, .5 + (1 - Math.sqrt(dx * dx + dy * dy)) * .8); if (ny < R.y) v = Math.max(v, .5 + (R.rx * .6 - Math.abs(ax - R.x)) / R.rx); }
+    if (v > .5) {
+      for (const Hh of holes) v = Math.min(v, .5 + (Math.hypot(ax - Hh.x, ny - Hh.y) - Hh.r) * 6);
+      for (const W of wins) { const dx = ax - W.x, dy = ny - W.y; let d = Math.hypot(dx, dy * 1.15) - W.s; d += (fbm(dx * 3 + 5, dy * 3, W.sd, 2) - .5) * W.s * .5; v = Math.min(v, .5 + d * 3); }
+    }
+    g[j * gx + i] = Math.round(clamp((v - .5) * 1.6 + .5, 0, 1) * 255);
   }
   return g;
 }
@@ -710,13 +861,13 @@ function gaussBlur(src, w, h, sigma){
   return out;
 }
 function buildField(L){
-  const gx = L.gx, gy = L.gy, org = S.organic;
-  let F = new Float32Array(gx * gy); for (let i = 0; i < F.length; i++) F[i] = L.grid[i];
-  const sigma = org * 1.8; if (sigma > .2) F = gaussBlur(F, gx, gy, sigma);
-  const hx = gx * SUB, hy = gy * SUB, Hf = new Float32Array(hx * hy), nearest = org < .04, na = org * .22, sd = L.seed;
+  const gx = L.gx, gy = L.gy;
+  let F = new Float32Array(gx * gy); for (let i = 0; i < F.length; i++) F[i] = L.grid[i] / 255;
+  const sigma = S.smoothing * 2.4; if (sigma > .2) F = gaussBlur(F, gx, gy, sigma);
+  const hx = gx * SUB, hy = gy * SUB, Hf = new Float32Array(hx * hy), nearest = S.smoothing < .03 && S.roughness < .03, na = S.roughness * .3, sd = L.seed;
   for (let j = 0; j < hy; j++) for (let i = 0; i < hx; i++) {
     let v;
-    if (nearest) v = F[Math.floor(j / SUB) * gx + Math.floor(i / SUB)];
+    if (nearest) v = F[Math.floor(j / SUB) * gx + Math.floor(i / SUB)] > .5 ? 1 : 0;
     else {
       const fx = clamp((i + .5) / SUB - .5, 0, gx - 1.001), fy = clamp((j + .5) / SUB - .5, 0, gy - 1.001);
       const i0 = Math.floor(fx), j0 = Math.floor(fy), a = fx - i0, b = fy - j0, i1 = Math.min(gx - 1, i0 + 1), j1 = Math.min(gy - 1, j0 + 1);
@@ -756,7 +907,6 @@ function buildLowTex(L, Fd){
   }
   L.tex.needsUpdate = true; L.data = data; L.texW = W; L.texH = H;
 }
-// marching squares -> closed outlines -> triangulated vector mesh
 function contourLoops(Hf, hx, hy){
   const W = hx + 2, H = hy + 2, P = new Float32Array(W * H);
   for (let j = 0; j < hy; j++) for (let i = 0; i < hx; i++) P[(j + 1) * W + i + 1] = Hf[j * hx + i];
@@ -801,23 +951,22 @@ const loopArea = l => { let a = 0; for (let i = 0; i < l.length; i++) { const p 
 function inPoly(pt, poly){ let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a[1] > pt[1]) !== (b[1] > pt[1]) && pt[0] < (b[0] - a[0]) * (pt[1] - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; }
 function buildSheetMesh(L, Fd){
   const {Hf, hx, hy} = Fd;
-  const raw = contourLoops(Hf, hx, hy).map(l => simplifyLoop(l, .12)).filter(l => l.length >= 3);
+  const raw = contourLoops(Hf, hx, hy).map(l => simplifyLoop(l, .1)).filter(l => l.length >= 3);
   const outers = [], holes = [];
   for (const l of raw) { const a = loopArea(l); if (Math.abs(a) < .6) continue; (a > 0 ? outers : holes).push({l, a:Math.abs(a), holes:[]}); }
   for (const h of holes) { let best = null; for (const o of outers) if (o.a > h.a && inPoly(h.l[0], o.l) && (!best || o.a < best.a)) best = o; if (best) best.holes.push(h.l); }
-  const toLocal = p => new THREE.Vector2((p[0] - 1 + .5) / hx - .5, (p[1] - 1 + .5) / hy - .5);
+  const toLocal = p => new THREE.Vector2((p[0] - .5) / hx - .5, (p[1] - .5) / hy - .5);
   const pos = [], idx = [];
   for (const o of outers) {
     const ov = o.l.map(toLocal), hv = o.holes.map(h => h.map(toLocal));
     let tris; try { tris = THREE.ShapeUtils.triangulateShape(ov, hv); } catch (e) { continue; }
-    const base = pos.length / 3, all = ov.concat(...hv);
-    all.forEach(v => pos.push(v.x, v.y, 0)); tris.forEach(t => idx.push(base + t[0], base + t[1], base + t[2]));
+    const base = pos.length / 3; ov.concat(...hv).forEach(v => pos.push(v.x, v.y, 0)); tris.forEach(t => idx.push(base + t[0], base + t[1], base + t[2]));
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
   L.mesh.geometry.dispose(); L.mesh.geometry = g;
 }
 function buildSheet(L){ const Fd = buildField(L); buildLowTex(L, Fd); buildSheetMesh(L, Fd); }
-const queue = new Map(); let initialDone = false, bubblesDirty = true;
+const queue = new Map(); let initialDone = false, bubblesDirty = true, crawlDirty = true;
 function queueBuild(L, plants){ const q = queue.get(L) || {plants:false}; q.plants = q.plants || plants; queue.set(L, q); }
 function processQueue(){
   if (!queue.size) return;
@@ -827,16 +976,17 @@ function processQueue(){
   if (!queue.size) {
     positionPlants(); updateColors(); updateEditVisuals();
     if (bubblesDirty) { bubblesDirty = false; rebuildBubbles(); }
+    if (crawlDirty) { crawlDirty = false; placeCrawlers(); }
     if (!initialDone) { initialDone = true; document.body.classList.add('ready'); setTimeout(() => document.body.classList.add('started'), 2600); }
   }
 }
 function refitGrids(){
   const N = layers.length;
-  layers.forEach((L, i) => { const gx = clamp(Math.round(GY * L.hw / L.hh), 12, 240);
+  layers.forEach((L, i) => { const gx = clamp(Math.round(GY * L.hw / L.hh), 12, 280);
     if (L.edited && L.grid) { if (gx !== L.gx || L.gy !== GY) { L.grid = resampleGrid(L.grid, L.gx, L.gy, gx, GY); L.gx = gx; L.gy = GY; } }
     else { L.gx = gx; L.gy = GY; L.grid = proceduralGrid(L, i, N); }
     queueBuild(L, true); });
-  bubblesDirty = true;
+  bubblesDirty = true; crawlDirty = true;
 }
 let regenTimer = 0;
 function regenShapes(){ clearTimeout(regenTimer); regenTimer = setTimeout(() => refitGrids(), 120); }
@@ -847,23 +997,34 @@ const GROW = {kelp:{flex:.6, h:[.24,.46], coral:.1, name:'Kelp'}, grass:{flex:.7
   tube:{flex:.04, h:[.1,.2], coral:.7, name:'Tube sponge'}, grape:{flex:.4, h:[.1,.18], coral:.5, name:'Grape weed'}};
 const HANG = {vine:{flex:.45, h:[.18,.38], coral:.1, name:'Vine'}, drape:{flex:.5, h:[.12,.28], coral:.2, name:'Moss curtain'}, roots:{flex:.2, h:[.1,.22], coral:0, name:'Roots'}, ribbon:{flex:.6, h:[.16,.34], coral:.15, name:'Ribbon weed'}};
 function removePlants(L){ for (const p of L.plants) { scene.remove(p.mesh); p.mat.dispose(); } L.plants = []; }
+function surfaceList(L, px, y0, y1, hanging){
+  const W = L.texW, H = L.texH, d = L.data, list = []; if (!d) return list;
+  const paper = y => y >= 0 && y < H && d[y * W + px] > 127; let prevP = paper(y0), run = 0;
+  for (let y = y0 - 1; y >= y1; y--) { const p = paper(y);
+    if (p !== prevP) { if (!hanging && p && run > H * .02) list.push(y); if (hanging && !p && run > H * .02 && y < y0 - 3) list.push(y + 1); run = 0; } else run++; prevP = p; }
+  return list;
+}
 function findSurface(L, r, hanging, embedTex){
   const W = L.texW, H = L.texH, d = L.data; if (!d) return null;
   const uSpan = clamp((L.vh * aspect + panMax() * .6) / L.hw, .1, 1), vSpan = clamp((L.vh + panMax() * .6) / L.hh, .1, 1);
   const paper = (x, y) => y >= 0 && y < H && d[y * W + x] > 127;
   for (let tries = 0; tries < 10; tries++) {
     const u = .5 + (r() * 2 - 1) * uSpan * .5, px = clamp(Math.floor(u * W), 0, W - 1);
-    const y0 = Math.min(H - 1, Math.floor((.5 + vSpan * .5) * H)), y1 = Math.max(0, Math.floor((.5 - vSpan * .5) * H));
-    const list = []; let prevP = paper(px, y0), run = 0;
-    for (let y = y0 - 1; y >= y1; y--) { const p = paper(px, y);
-      if (p !== prevP) { if (!hanging && p && run > H * .03) list.push(y); if (hanging && !p && run > H * .02 && y < y0 - 3) list.push(y + 1); run = 0; } else run++; prevP = p; }
+    const list = surfaceList(L, px, Math.min(H - 1, Math.floor((.5 + vSpan * .5) * H)), Math.max(0, Math.floor((.5 - vSpan * .5) * H)), hanging);
     if (!list.length) continue;
     const y = list[Math.floor(r() * list.length)], dir = hanging ? 1 : -1, e = Math.max(2, Math.round(embedTex));
     let ok = true; for (const f of [.35, .7, 1]) { const yy = y + dir * Math.round(e * f); for (const dx of [-2, 0, 2]) if (!paper(clamp(px + dx, 0, W - 1), yy)) ok = false; }
     if (!ok) continue;
-    return {u, v:(y + dir * e * .85) / H};
+    return {u, v:(y + dir * e * .85) / H, vs:y / H};
   }
   return null;
+}
+function surfaceNear(L, x, y, range){
+  if (!L.data) return null; const W = L.texW, H = L.texH, u = x / (2 * L.hw) + .5; if (u < 0 || u > 1) return null;
+  const px = clamp(Math.floor(u * W), 0, W - 1), v = y / (2 * L.hh) + .5, rg = range / (2 * L.hh);
+  const list = surfaceList(L, px, clamp(Math.floor((v + rg) * H), 0, H - 1), clamp(Math.floor((v - rg) * H), 0, H - 1), false);
+  if (!list.length) return null; let best = list[0]; for (const q of list) if (Math.abs(q / H - v) < Math.abs(best / H - v)) best = q;
+  return (best / H - .5) * 2 * L.hh;
 }
 function anchorPlants(L){
   removePlants(L);
@@ -872,20 +1033,23 @@ function anchorPlants(L){
   const r = mulberry32(seedForT(idx / (N - 1)) ^ 0x5bd1e995 ^ (L.edited ? 77 : 0));
   const grow = Object.keys(GROW).filter(k => S.growTypes[k]), hang = Object.keys(HANG).filter(k => S.hangTypes[k]);
   if (!grow.length && !hang.length) return;
-  const sizeK = lerp(.35, 1, smooth(clamp((t - S.clearFront * .15) / .35, 0, 1))) * (1 - t * .25);
+  const sizeK = lerp(.35, 1, smooth(clamp((t - S.clearFront * .15) / .35, 0, 1))) * (1 - t * .25) * S.plantSize;
   const count = Math.round(S.plantDensity * lerp(15, 6, t) * Math.min(1.4, 18 / N * 1.1 + .2));
   for (let k = 0; k < count; k++) {
     const hanging = hang.length > 0 && (!grow.length || r() < .3), list = hanging ? hang : grow, type = list[Math.floor(r() * list.length)], T = (hanging ? HANG : GROW)[type];
     const hFrac = lerp(T.h[0], T.h[1], r()) * sizeK, hWorld = hFrac * 2 * L.vh, embedTex = hWorld * .14 / (2 * L.hh) * L.texH;
     const s = findSurface(L, r, hanging, embedTex); if (!s) continue;
-    const mat = flatMat(4), U = mat.uniforms; U.uFlip.value = hanging ? -1 : 1; U.uFlex.value = T.flex * (.75 + r() * .5);
-    const mesh = new THREE.Mesh(plantGeo(type, Math.floor(r() * 3)), mat); mesh.frustumCulled = false; if (hanging) mesh.rotation.z = Math.PI; scene.add(mesh);
-    L.plants.push({mesh, mat, u:s.u, v:s.v, hFrac, hanging, coral:r() < T.coral, coralIdx:Math.floor(r() * 3), shade:(r() - .5) * .06, basePhase:r() * .8});
+    let mat;
+    if (S.plantsCut) { mat = new THREE.ShaderMaterial({ uniforms:Object.assign({}, L.mat.uniforms, {uPlant:{value:1}, uFlex:{value:T.flex * (.75 + r() * .5)}, uFlip:{value:hanging ? -1 : 1}, uPlantPhase:{value:0}, uNoRim:{value:1}}),
+      vertexShader:SHEET_VS, fragmentShader:SHEET_FS, side:THREE.DoubleSide }); }
+    else { mat = flatMat(4); mat.uniforms.uFlip.value = hanging ? -1 : 1; mat.uniforms.uFlex.value = T.flex * (.75 + r() * .5); }
+    const mesh = new THREE.Mesh(plantGeo(type, Math.floor(r() * S.variety)), mat); mesh.frustumCulled = false; if (hanging) mesh.rotation.z = Math.PI; scene.add(mesh);
+    L.plants.push({mesh, mat, cut:S.plantsCut, u:s.u, v:s.v, hFrac, hanging, coral:r() < T.coral, coralIdx:Math.floor(r() * 3), shade:(r() - .5) * .06, basePhase:r() * .8});
   }
 }
 function positionPlants(){
   layers.forEach(L => { for (const p of L.plants) { const x = (p.u - .5) * 2 * L.hw, y = (p.v - .5) * 2 * L.hh, h = p.hFrac * 2 * L.vh;
-    p.mesh.position.set(x, y, L.z - .03); p.mesh.scale.set(h, h, 1); p.mat.uniforms.uPlantPhase.value = p.basePhase - (x / L.vh) * 1.2; p.mat.uniforms.uDepthT.value = clamp(L.t, 0, 1); } });
+    p.mesh.position.set(x, y, p.cut ? L.z + .004 : L.z - .03); p.mesh.scale.set(h, h, 1); p.mat.uniforms.uPlantPhase.value = p.basePhase - (x / L.vh) * 1.2; if (!p.cut) p.mat.uniforms.uDepthT.value = clamp(L.t, 0, 1); } });
 }
 
 /* ================= colours ================= */
@@ -893,7 +1057,7 @@ function updateColors(){
   parseStops(); cA.set(S.cAccent); cL.set(S.cLight); cAmb.set(S.cAmbient); colorAt(0, cFront);
   cGlowP.copy(cL).lerp(cA, .25); shared.uLightCol.value.copy(cL);
   shared.uGlowCol.value.set(S.cGlow); shared.uGlow.value = S.backGlow; shared.uGlowSize.value = .1 + S.glowSize * .9; shared.uGlowSpill.value = S.glowSpill;
-  const bc = tunnelCenterBack(); shared.uGlowC.value.set(S.tunnel ? bc[0] : 0, S.tunnel ? bc[1] : .2);
+  const bc = tunnelCenterBack(); shared.uGlowC.value.set(S.shapeMode === 'tunnel' ? bc[0] : 0, S.shapeMode === 'tunnel' ? bc[1] : .2);
   colorAt(1, _c3); renderer.setClearColor(_c3, 1);
   const hsl = {}; cA.getHSL(hsl); const am = S.ambientAmt * .6;
   const av = [[0,0,0],[-.05,.05,-.06],[.06,-.05,.08],[0,-.25,.18],[-.1,.1,0]];
@@ -902,21 +1066,21 @@ function updateColors(){
   CORAL.forEach((c, i) => { c.setHSL((hsl.h + cv[i][0] + 1) % 1, clamp(hsl.s + cv[i][1], 0, 1), clamp(hsl.l + cv[i][2], .05, .95)); if (am) c.lerp(cAmb, am); });
   layers.forEach((L, i) => { colorAt(clamp(L.t, 0, 1), L.color); const alt = ((i % 2) ? 1 : -1) * S.layerContrast * .05 + (hash2(i, 7, 3) - .5) * S.layerContrast * .03;
     L.color.multiplyScalar(1 + alt); L.mat.uniforms.uColor.value.copy(L.color);
-    for (const p of L.plants) { _c1.copy(L.color).multiplyScalar(1 + p.shade); if (p.coral) _c1.lerp(CORAL[p.coralIdx], coralWeight(L.t)); p.mat.uniforms.uColor.value.copy(_c1); } });
+    for (const p of L.plants) { if (p.cut) continue; _c1.copy(L.color).multiplyScalar(1 + p.shade); if (p.coral) _c1.lerp(CORAL[p.coralIdx], coralWeight(L.t)); p.mat.uniforms.uColor.value.copy(_c1); } });
   if (snow) { colorAt(.3, snow.material.uniforms.uColor.value); snow.material.uniforms.uColor.value.lerp(cL, .45); }
   if (plank) plank.material.uniforms.uColor.value.copy(cGlowP);
   if (bubPts) { colorAt(.25, bubPts.material.uniforms.uColor.value); bubPts.material.uniforms.uColor.value.lerp(cL, .65); }
-  if (trailPts) trailPts.material.uniforms.uColor.value.copy(bubPts ? bubPts.material.uniforms.uColor.value : cL);
+  if (trailPts) { colorAt(.25, trailPts.material.uniforms.uColor.value); trailPts.material.uniforms.uColor.value.lerp(cL, .65); }
   for (const o of rays) o.mesh.material.color.copy(cL);
   if (foodMat) foodMat.uniforms.uColor.value.copy(cA).lerp(cL, .35);
   for (const f of fishes) if (f.halo) f.halo.material.color.copy(cGlowP);
 }
 function syncUniforms(){
   shared.uGrain.value = S.grain; shared.uCaustic.value = S.caustics; shared.uRim.value = S.rim; shared.uShadowStr.value = S.shadows;
+  shared.uWobble.value = S.wobble; shared.uWobSpeed.value = .1 + S.wobbleSpeed * 1.2;
   shared.uFocus.value = S.focus; shared.uRange.value = S.dofRange; shared.uNear.value = S.dofNear; shared.uFar.value = S.dofFar; shared.uDofOn.value = S.dof && !editMode ? 1 : 0;
-  if (dofMat) { dofMat.uniforms.uMax.value = (4 + S.dofMax * 28) * renderer.getPixelRatio(); }
-  if (bubPts) { const U = bubPts.material.uniforms; U.uStyle.value = BSTYLE[S.bubbleStyle] || 0; U.uOpacity.value = S.bubbleOpacity; U.uSizeK.value = .4 + S.bubbleSize * 1.6; U.uSpeedK.value = .3 + S.bubbleSpeed * 1.6; }
-  if (trailPts) { const U = trailPts.material.uniforms; U.uStyle.value = BSTYLE[S.bubbleStyle] || 0; U.uOpacity.value = S.bubbleOpacity; U.uSizeK.value = .4 + S.bubbleSize * 1.6; }
+  if (postMat) { const U = postMat.uniforms; U.uMax.value = (4 + S.dofMax * 28) * renderer.getPixelRatio(); U.uDof.value = S.dof ? 1 : 0; U.uWater.value = S.waterFx; U.uWScale.value = S.waterScale; U.uWSpeed.value = S.waterSpeed; }
+  for (const B of [bubPts, trailPts]) if (B) { const U = B.material.uniforms; U.uStyle.value = BSTYLE[S.bubbleStyle] || 0; U.uOpacity.value = S.bubbleOpacity; U.uSizeK.value = .4 + S.bubbleSize * 1.6; U.uSpeedK.value = .3 + S.bubbleSpeed * 1.6; }
   refreshPrevRefs(); updateColors();
 }
 
@@ -962,32 +1126,31 @@ function rebuildBubbles(){
 const TRAILN = 240; const trail = {i:0, x:new Float32Array(TRAILN), y:new Float32Array(TRAILN), z:new Float32Array(TRAILN), life:new Float32Array(TRAILN).fill(2), sz:new Float32Array(TRAILN), vs:new Float32Array(TRAILN), ph:new Float32Array(TRAILN)};
 function initTrails(){
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAILN * 3), 3));
-  for (const n of ['aSeed','aRise','aSpeed','aGpu']) g.setAttribute(n, new THREE.BufferAttribute(new Float32Array(TRAILN), 1));
-  g.setAttribute('aSize', new THREE.BufferAttribute(new Float32Array(TRAILN), 1)); g.setAttribute('aLife', new THREE.BufferAttribute(new Float32Array(TRAILN), 1));
+  for (const n of ['aSeed','aRise','aSpeed','aGpu','aSize','aLife']) g.setAttribute(n, new THREE.BufferAttribute(new Float32Array(TRAILN), 1));
   trailPts = new THREE.Points(g, bubbleMaterial()); trailPts.frustumCulled = false; scene.add(trailPts);
 }
 function emitTrail(x, y, z, ds){ const i = trail.i; trail.i = (i + 1) % TRAILN; trail.x[i] = x; trail.y[i] = y; trail.z[i] = z; trail.life[i] = 0; trail.sz[i] = .05 * ds * (.6 + Math.random() * .8); trail.vs[i] = (.35 + Math.random() * .3) * ds; trail.ph[i] = Math.random() * 6.28; }
 function updateTrails(dt){
-  if (!trailPts) return; const pa = trailPts.geometry.attributes.position.array, sa = trailPts.geometry.attributes.aSize.array, la = trailPts.geometry.attributes.aLife.array, sk = .3 + S.bubbleSpeed * 1.6;
+  if (!trailPts) return; const G = trailPts.geometry.attributes, pa = G.position.array, sa = G.aSize.array, la = G.aLife.array, sk = .3 + S.bubbleSpeed * 1.6;
   for (let i = 0; i < TRAILN; i++) { const l = trail.life[i]; if (l >= 1) { sa[i] = 0; continue; }
     trail.life[i] = l + dt / 4.5; trail.y[i] += trail.vs[i] * sk * dt; trail.x[i] += (Math.sin(time * 2.4 + trail.ph[i]) * .08 + shared.uCurrent.value * .1) * dt;
     pa[i*3] = trail.x[i]; pa[i*3+1] = trail.y[i]; pa[i*3+2] = trail.z[i]; sa[i] = trail.sz[i] * (1 + l * .6); la[i] = l; }
-  trailPts.geometry.attributes.position.needsUpdate = true; trailPts.geometry.attributes.aSize.needsUpdate = true; trailPts.geometry.attributes.aLife.needsUpdate = true;
+  G.position.needsUpdate = true; G.aSize.needsUpdate = true; G.aLife.needsUpdate = true;
 }
 const rayTex = (() => { const c = document.createElement('canvas'); c.width = 64; c.height = 256; const x = c.getContext('2d');
   let g = x.createLinearGradient(0,0,0,256); g.addColorStop(0,'rgba(255,255,255,1)'); g.addColorStop(.55,'rgba(255,255,255,.35)'); g.addColorStop(1,'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0,0,64,256);
   x.globalCompositeOperation = 'destination-in'; g = x.createLinearGradient(0,0,64,0); g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(.5,'rgba(0,0,0,1)'); g.addColorStop(1,'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0,0,64,256);
-  const t = new THREE.CanvasTexture(c); return t; })();
+  return new THREE.CanvasTexture(c); })();
 const haloTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); const g = x.createRadialGradient(32,32,0,32,32,32);
   g.addColorStop(0,'rgba(255,255,255,1)'); g.addColorStop(.4,'rgba(255,255,255,.35)'); g.addColorStop(1,'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0,0,64,64); return new THREE.CanvasTexture(c); })();
 function layoutRays(){
   for (const o of rays) { scene.remove(o.mesh); o.mesh.material.dispose(); } rays = [];
   const N = layers.length; if (S.rays <= 0 || N < 3) return;
-  const r = mulberry32(S.seed ^ 0x777);
+  const r = mulberry32(S.seed ^ 0x777), [lx, ly] = lightDir(), tilt = Math.atan2(-lx, ly);
   for (let k = 0; k < 5; k++) {
     const i = Math.floor(r() * Math.max(1, (N - 1) * .55)), z = lerp(layers[i].z, layers[i+1].z, .5), vh = viewHalfH(z);
     const m = new THREE.Mesh(planeGeo, keepAlpha(new THREE.MeshBasicMaterial({map:rayTex, color:cL.clone(), transparent:true, opacity:0, depthWrite:false}), true));
-    m.frustumCulled = false; m.scale.set(vh * (.12 + r() * .3), vh * 3.2, 1); m.position.set((r() * 2 - 1) * vh * aspect * 1.1, vh * .55, z); m.rotation.z = .28 + (r() - .5) * .08;
+    m.frustumCulled = false; m.scale.set(vh * (.12 + r() * .3), vh * 3.2, 1); m.position.set((r() * 2 - 1) * vh * aspect * 1.1 + lx * vh * .5, ly * vh * .55, z); m.rotation.z = -tilt + (r() - .5) * .08;
     scene.add(m); rays.push({mesh:m, ph:r() * 6.28, base:.05 + r() * .07, t:clamp(-z / S.depth, 0, 1)});
   }
   updateEditVisuals();
@@ -996,130 +1159,215 @@ function updateRays(){ for (const o of rays) o.mesh.material.opacity = S.rays * 
 
 /* ================= fish ================= */
 const SPECIES = {
-  reef:  {name:'Reef fish',  w:4,   size:[.75,1.1], cruise:.7,  hz:2.2, amp:1,   wander:1,   ps:.9},
-  tang:  {name:'Tang',       w:2,   size:[.6,.9],   cruise:.5,  hz:1.8, amp:.9,  wander:.8,  ps:1},
-  angel: {name:'Angelfish',  w:1.6, size:[.55,.8],  cruise:.32, hz:1.1, amp:.7,  wander:.7,  ps:1.2},
-  koi:   {name:'Koi',        w:1.4, size:[1,1.4],   cruise:.42, hz:.9,  amp:1.25,wander:.9,  ps:.8},
-  slim:  {name:'Needlefish', w:1.4, size:[1.2,1.8], cruise:.95, hz:2.4, amp:.7,  wander:.6,  ps:.6},
-  puffer:{name:'Puffer',     w:1,   size:[.6,.85],  cruise:.22, hz:3,   amp:.45, wander:1.1, ps:1.6},
-  shark: {name:'Shark',      w:.4,  size:[2.6,3.6], cruise:.55, hz:.8,  amp:.8,  wander:.4,  ps:.4},
-  ray:   {name:'Ray',        w:.6,  size:[1.6,2.4], cruise:.38, hz:.32, amp:1,   wander:.5,  ps:0},
-  jelly: {name:'Jellyfish',  w:1,   size:[.7,1.1],  cruise:.15, hz:0,   amp:0,   wander:0,   ps:0},
-  tiny:  {name:'Schools',    w:0,   size:[.28,.4],  cruise:.8,  hz:3.2, amp:1,   wander:.8,  ps:1},
-  whale: {name:'Whale',      w:0,   size:[8,11],    cruise:.4,  hz:.32, amp:.6,  wander:.2,  ps:.5}
+  reef:    {name:'Reef fish',  w:4,   size:[.75,1.1], cruise:.7,  hz:2.2, amp:1,   wander:1,   ps:.9, peck:true},
+  tang:    {name:'Tang',       w:2,   size:[.6,.9],   cruise:.5,  hz:1.8, amp:.9,  wander:.8,  ps:1, peck:true},
+  angel:   {name:'Angelfish',  w:1.6, size:[.55,.8],  cruise:.32, hz:1.1, amp:.7,  wander:.7,  ps:1.2},
+  koi:     {name:'Koi',        w:1.4, size:[1,1.4],   cruise:.42, hz:.9,  amp:1.25,wander:.9,  ps:.8, peck:true},
+  slim:    {name:'Needlefish', w:1.4, size:[1.2,1.8], cruise:.95, hz:2.4, amp:.7,  wander:.6,  ps:.6},
+  eel:     {name:'Eel',        w:1,   size:[1.8,2.8], cruise:.35, hz:.7,  amp:1.2, wander:.5,  ps:0},
+  seahorse:{name:'Seahorse',   w:1,   size:[.5,.8],   cruise:.12, hz:0,   amp:0,   wander:0,   ps:0, hover:true},
+  turtle:  {name:'Turtle',     w:.6,  size:[1.2,1.7], cruise:.3,  hz:.35, amp:1,   wander:.4,  ps:0, rigid:true},
+  ray:     {name:'Ray',        w:.6,  size:[1.6,2.4], cruise:.38, hz:.32, amp:1,   wander:.5,  ps:0},
+  jelly:   {name:'Jellyfish',  w:1,   size:[.7,1.1],  cruise:.15, hz:0,   amp:0,   wander:0,   ps:0},
+  shark:   {name:'Shark',      w:.4,  size:[2.6,3.6], cruise:.55, hz:.8,  amp:.8,  wander:.4,  ps:.4},
+  puffer:  {name:'Puffer',     w:.8,  size:[.6,.85],  cruise:.22, hz:3,   amp:.45, wander:1.1, ps:1.6},
+  tiny:    {name:'Schools',    w:0,   size:[.28,.4],  cruise:.8,  hz:3.2, amp:1,   wander:.8,  ps:1},
+  crab:    {name:'Crab',       w:0,   size:[.45,.7],  crawl:true},
+  starfish:{name:'Starfish',   w:0,   size:[.3,.5],   crawl:true},
+  whale:   {name:'Whale',      w:0,   size:[8,11],    cruise:.4,  hz:.32, amp:.6,  wander:.2,  ps:.5}
 };
-let fishes = [];
+let fishes = [], crawlers = [];
 function tMinFish(){ return .06 + S.clearFront * .08; }
 function randomG(sp){ let tt; if (sp === 'whale') tt = .6 + Math.random() * .25; else if (sp === 'jelly') tt = tMinFish() + Math.random() * .55; else if (sp === 'ray' || sp === 'shark') tt = .3 + Math.random() * .45; else tt = clamp(S.accentDepth + gauss() * .28, tMinFish(), .85); return gAtT(tt); }
 function waveAt(xf, ph, beat, turn){ const s = clamp((.22 - xf) / .72, 0, 1), sn = Math.sin(ph - s * 3), cs = Math.cos(ph - s * 3);
   const y = sn * beat * .05 * s * s + turn * s * s * .12; const dyds = -3 * cs * beat * .05 * s * s + sn * beat * .1 * s + turn * .24 * s; return [y, s > 0 ? dyds * (-1 / .72) : 0]; }
-function spawnFish(sp, opts){
-  opts = opts || {}; const D = SPECIES[sp], model = fishModel(sp, Math.floor(Math.random() * 3));
-  const U = {uPhase:{value:0}, uBeat:{value:0}, uTurn:{value:0}, uDepthT:{value:0}, uOpacity:{value:1}};
+function buildCreature(sp){
+  const model = fishModel(sp, Math.floor(Math.random() * S.variety));
+  const U = {uPhase:{value:Math.random() * 6}, uBeat:{value:0}, uTurn:{value:0}, uDepthT:{value:0}, uOpacity:{value:1}, uPulse:{value:0}, uVelX:{value:0}};
   const group = new THREE.Group(); scene.add(group);
   const mats = {}, partObjs = [];
   for (const p of model.parts) { const key = p.slot + p.mode; if (!mats[key]) mats[key] = flatMat(p.mode, U); const m = new THREE.Mesh(p.geo, mats[key]); m.frustumCulled = false; m.position.set(p.pivot[0], p.pivot[1], p.z); group.add(m); partObjs.push({m, p}); }
-  const sm = keepAlpha(new THREE.MeshBasicMaterial({map:model.shadow.tex, color:0x000000, transparent:true, opacity:.3, depthWrite:false}), false);
-  const shadow = new THREE.Mesh(planeGeo, sm); shadow.frustumCulled = false; group.add(shadow);
+  const shadow = new THREE.Mesh(planeGeo, keepAlpha(new THREE.MeshBasicMaterial({map:model.shadow.tex, color:0x000000, transparent:true, opacity:.3, depthWrite:false}), false)); shadow.frustumCulled = false; group.add(shadow);
+  return {model, U, group, mats, partObjs, shadow};
+}
+function spawnFish(sp, opts){
+  opts = opts || {}; const D = SPECIES[sp], C = buildCreature(sp);
   const g = opts.leader ? opts.leader.g : randomG(sp), z = zAtG(g), vh = viewHalfH(z), ds = depthScale(z);
-  const f = {sp, group, mats, U, partObjs, model, shadow, g, gT:g, gTimer:12 + Math.random() * 20, x:(Math.random() * 2 - 1) * vh * aspect * 1.1, y:(Math.random() * 1.4 - .75) * vh,
-    dir:Math.random() < .5 ? 1 : -1, h:0, w:0, v:D.cruise * ds * .6, vT:D.cruise * ds * .6, mode:0, modeT:Math.random() * 2, calm:.8 + Math.random() * .8, phase:Math.random() * 6, beat:.3,
-    pectPh:Math.random() * 6, hzK:.85 + Math.random() * .3, size:lerp(D.size[0], D.size[1], Math.random()) * ds, cruise:D.cruise * (.8 + Math.random() * .4), seed:Math.random() * 100, panic:0, panicDir:0,
+  const f = Object.assign(C, {sp, g, gT:g, gTimer:12 + Math.random() * 20, x:(Math.random() * 2 - 1) * vh * aspect * 1.1, y:(Math.random() * 1.4 - .75) * vh,
+    dir:Math.random() < .5 ? 1 : -1, h:0, w:0, v:(D.cruise || .2) * ds * .6, vT:(D.cruise || .2) * ds * .6, mode:0, modeT:Math.random() * 2, calm:.8 + Math.random() * .8, phase:Math.random() * 6, beat:.3,
+    pectPh:Math.random() * 6, hzK:.85 + Math.random() * .3, size:lerp(D.size[0], D.size[1], Math.random()) * ds * S.fishSize, cruise:(D.cruise || .2) * (.8 + Math.random() * .4), seed:Math.random() * 100, panic:0, panicDir:0,
     accent:Math.random() < .65 && sp !== 'whale' && sp !== 'shark', accentIdx:Math.floor(Math.random() * ACC.length), leader:opts.leader || null, ox:0, oy:0, og:0, of1:0, of2:0, oph:0, spdK:1,
-    halo:null, pulse:0, pt:Math.random(), vx:0, vy:0, trailT:Math.random() * 4};
+    halo:null, pulse:0, pt:Math.random(), vx:0, vy:0, trailT:Math.random() * 4, state:'swim', peckT:rnd(4, 16), pk:null});
   if (f.leader) { f.dir = f.leader.dir; f.ox = .6 + Math.random() * 2.6; f.oy = (Math.random() - .5) * 1.4; f.og = (Math.random() - .5) * .35; f.of1 = rnd(.15, .45); f.of2 = rnd(.15, .45); f.oph = Math.random() * 6; f.spdK = rnd(.9, 1.12);
     f.x = f.leader.x - f.dir * f.ox * ds; f.y = f.leader.y + f.oy * ds; f.accentIdx = f.leader.accentIdx; f.accent = f.leader.accent; f.size *= rnd(.85, 1.15); }
   if (sp === 'whale') { f.x = -f.dir * vh * aspect * 1.9; f.y = (Math.random() - .5) * vh * .6; }
-  if (sp === 'jelly') { f.halo = new THREE.Mesh(planeGeo, keepAlpha(new THREE.MeshBasicMaterial({map:haloTex, color:cGlowP.clone(), transparent:true, opacity:0, depthWrite:false}), true)); f.halo.frustumCulled = false; f.halo.scale.set(2.2, 1.6, 1); f.halo.position.set(0, .1, -.05); group.add(f.halo); }
+  if (sp === 'jelly') { f.halo = new THREE.Mesh(planeGeo, keepAlpha(new THREE.MeshBasicMaterial({map:haloTex, color:cGlowP.clone(), transparent:true, opacity:0, depthWrite:false}), true)); f.halo.frustumCulled = false; f.halo.scale.set(2.2, 1.6, 1); f.halo.position.set(0, .1, -.05); f.group.add(f.halo); }
   fishes.push(f); return f;
 }
-function disposeFish(f){ scene.remove(f.group); for (const k in f.mats) f.mats[k].dispose(); f.shadow.material.dispose(); if (f.halo) f.halo.material.dispose(); }
+function disposeCreature(f){ scene.remove(f.group); for (const k in f.mats) f.mats[k].dispose(); f.shadow.material.dispose(); if (f.halo) f.halo.material.dispose(); }
 function rebuildFish(){
-  for (const f of fishes) disposeFish(f); fishes = [];
-  if (layers.length < 3) return;
+  for (const f of fishes) disposeCreature(f); fishes = [];
+  if (layers.length < 3) { placeCrawlers(); return; }
   const pool = Object.entries(SPECIES).filter(e => e[1].w > 0 && S.fishTypes[e[0]]), tw = pool.reduce((a, e) => a + e[1].w, 0);
   if (pool.length) { const pick = () => { let s = Math.random() * tw; for (const [k, v] of pool) { s -= v.w; if (s <= 0) return k; } return pool[0][0]; };
     const n = Math.round(lerp(1, 18, S.fishDensity)); for (let i = 0; i < n; i++) spawnFish(pick()); }
   if (S.fishTypes.tiny) { const schools = Math.round(S.schools * 3); for (let s = 0; s < schools; s++) { const L = spawnFish('tiny'); const c = 5 + Math.floor(Math.random() * 9); for (let k = 0; k < c; k++) spawnFish('tiny', {leader:L}); } }
   if (S.bigVisitors) spawnFish('whale');
-  updateEditVisuals();
+  placeCrawlers(); updateEditVisuals();
 }
 function fishEdge(o){ const vh = viewHalfH(zAtG(o.g)); return vh * aspect * (o.sp === 'whale' ? 1.9 : 1.15) + o.size * 1.3; }
+function tryPeck(f, N){
+  const gi = clamp(Math.floor(f.g), 0, N - 2), L = layers[Math.min(N - 2, gi + 1)]; if (!L || !L.data) return;
+  const zL = L.z, vhL = viewHalfH(zL), ax = f.x + f.dir * rnd(.6, 2.2) * f.size; if (Math.abs(ax) > vhL * aspect * .9) return;
+  const sy = surfaceNear(L, ax, f.y - f.size * .4, vhL * .6); if (sy === null) return;
+  f.state = 'peck'; f.pk = {x:ax, y:sy, t:rnd(3.5, 7), ph:0}; f.gT = layers.indexOf(L) - .12;
+}
+function animParts(f, beat, turn, slow){
+  for (const {m, p} of f.partObjs) {
+    if (p.anim === 'body' || p.anim === 'none') continue;
+    let wy = 0, base = 0; if (!SPECIES[f.sp].rigid) { const w = waveAt(p.pivot[0], f.phase, beat, turn); wy = w[0]; base = Math.atan(w[1]); }
+    m.position.y = p.pivot[1] + wy;
+    if (p.anim === 'tail') { m.rotation.z = base + Math.sin(f.phase - 3.5) * beat * .2; m.scale.x = .62 + .38 * Math.abs(Math.cos(f.phase - 3.5)); }
+    else if (p.anim === 'dorsal') { m.rotation.z = base * .8 + Math.sin(f.phase - 2) * beat * .08 - turn * .18; m.scale.y = .9 + .14 * slow; }
+    else if (p.anim === 'anal') { m.rotation.z = base * .8 + Math.sin(f.phase - 2.4) * beat * .08 + turn * .18; m.scale.y = .9 + .1 * slow; }
+    else if (p.anim === 'pect') { m.rotation.z = -.15 + Math.sin(f.pectPh) * (.18 + slow * .32); m.scale.x = .75 + .25 * Math.cos(f.pectPh); }
+    else if (p.anim === 'pelvic') m.rotation.z = Math.sin(f.pectPh * 1.3 + 1) * .14;
+    else if (p.anim === 'flutter') m.scale.x = .5 + .5 * Math.abs(Math.sin(time * 15 + f.seed));
+    else if (p.anim === 'flipF') { m.rotation.z = -.15 + Math.sin(f.phase) * (.35 + beat * .4); m.scale.x = .8 + .2 * Math.cos(f.phase); }
+    else if (p.anim === 'flipR') m.rotation.z = Math.sin(f.phase + 1.6) * (.15 + beat * .2);
+    else if (p.anim === 'head') m.rotation.z = Math.sin(f.phase * .5) * .05 - turn * .1;
+  }
+}
 function updateFish(f, dt, N){
   const D = SPECIES[f.sp];
   if (f.leader) f.g = clamp(f.leader.g + f.og, .1, N - 1.15);
-  else if (f.sp !== 'whale') { f.gTimer -= dt; if (f.gTimer <= 0) { f.gTimer = 15 + Math.random() * 25; f.gT = clamp(f.g + (Math.random() < .5 ? -1 : 1) * (.3 + Math.random() * .7), gAtT(tMinFish()), N - 1.3); } f.g += clamp(f.gT - f.g, -.5, .5) * dt * .1; }
+  else if (f.sp !== 'whale') { if (f.state !== 'peck') { f.gTimer -= dt; if (f.gTimer <= 0) { f.gTimer = 15 + Math.random() * 25; f.gT = clamp(f.g + (Math.random() < .5 ? -1 : 1) * (.3 + Math.random() * .7), gAtT(tMinFish()), N - 1.3); } } f.g += clamp(f.gT - f.g, -.5, .5) * dt * (f.state === 'peck' ? .5 : .1); }
   f.g = clamp(f.g, .1, N - 1.15);
   const z = zAtG(f.g), vh = viewHalfH(z), bx = vh * aspect, ds = depthScale(z), cur = shared.uCurrent.value, surge = S.sway * .25 * Math.cos(time * .7), G = f.group;
   if (f.sp === 'jelly') {
-    f.pt += dt * (.35 + f.cruise); const ph = f.pt % 1, pulse = ph < .32 ? Math.sin(ph / .32 * Math.PI) : 0; f.pulse += (pulse - f.pulse) * Math.min(1, dt * 10);
-    f.vy += (pulse * 1.2 - .1) * ds * dt; f.vy *= Math.exp(-dt * 1.1); f.vx = lerp(f.vx, (cur * .25 + surge * .3) * ds, dt * .5);
+    f.pt += dt * (.35 + f.cruise); const ph = f.pt % 1, pulse = ph < .3 ? Math.sin(ph / .3 * Math.PI * .5) : Math.max(0, 1 - (ph - .3) / .45); f.pulse += (pulse - f.pulse) * Math.min(1, dt * 8);
+    const thrust = ph < .3 ? 1 : 0; f.vy += (thrust * 1.1 - .1) * ds * dt; f.vy *= Math.exp(-dt * 1.2); f.vx = lerp(f.vx, (cur * .25 + surge * .3) * ds, dt * .5);
     f.x += f.vx * dt; f.y += f.vy * dt;
     if (f.y > vh * 1.3) { f.y = -vh * 1.3; f.x = (Math.random() * 2 - 1) * bx; } if (f.y < -vh * 1.25) f.vy += dt * ds;
     if (f.x > bx * 1.35) f.x = -bx * 1.35; if (f.x < -bx * 1.35) f.x = bx * 1.35;
-    G.scale.set(f.size * (1 + .1 * f.pulse), f.size * (1 - .12 * f.pulse), 1); G.rotation.z = clamp(-f.vx * .3, -.2, .2); f.U.uPhase.value = f.seed;
+    G.scale.set(f.size, f.size, 1); G.rotation.z = clamp(-f.vx * .3, -.2, .2);
+    f.U.uPulse.value = f.pulse; f.U.uVelX.value = clamp((f.vx * 1.5 - f.vy * .0) / ds, -1, 1); f.U.uPhase.value = f.seed;
     if (f.halo) f.halo.material.opacity = S.plankton * .6 * (.55 + .45 * f.pulse);
+  } else if (D.hover) {
+    f.x += f.dir * f.cruise * ds * .4 * (.6 + .4 * Math.sin(time * .3 + f.seed)) * dt + (cur * .1) * ds * dt;
+    f.y += (Math.sin(time * .45 + f.seed) * .1 + (fbm(time * .05 + f.seed, 2, 5, 2) - .5) * .3) * ds * dt;
+    if (f.y > vh * .7) f.y -= dt * .2 * ds; if (f.y < -vh * .8) f.y += dt * .2 * ds;
+    if (f.dir * f.x > fishEdge(f)) { f.x = -f.dir * fishEdge(f); f.y = (Math.random() * 1.2 - .6) * vh; f.g = f.gT = randomG(f.sp); }
+    G.scale.set(f.size * f.dir, f.size, 1); G.rotation.z = Math.sin(time * .4 + f.seed) * .08 * f.dir;
+    animParts(f, 0, 0, 1);
   } else {
     const cruise = f.cruise * ds, steady = f.sp === 'whale';
-    if (f.panic > 0) { f.panic -= dt; f.mode = 1; f.vT = cruise * 2.8; }
-    else if (steady) { f.mode = 1; f.vT = cruise; }
-    else if (!f.leader) { f.modeT -= dt; if (f.modeT <= 0) { if (f.mode) { f.mode = 0; f.modeT = lerp(.9, 2.8, Math.random()) * f.calm; f.vT = cruise * lerp(.3, .55, Math.random()); } else { f.mode = 1; f.modeT = lerp(.5, 1.4, Math.random()); f.vT = cruise * lerp(1, 1.6, Math.random()); } } }
-    let hd = (fbm(time * .07 + f.seed, f.seed * .37, 7, 2) - .5) * 1.7 * D.wander;
-    const yn = f.y / vh; if (yn > .62) hd -= (yn - .62) * 3; if (yn < -.7) hd += (-.7 - yn) * 3;
-    let food = null, fd = 4.5 * ds;
-    if (!steady) for (const fo of foods) { if (fo.dead || Math.abs(fo.g - f.g) > 1.6) continue; if ((fo.x - f.x) * f.dir < -.1 * ds) continue; const d = Math.hypot(fo.x - f.x, fo.y - f.y); if (d < fd) { fd = d; food = fo; } }
-    if (food && f.panic <= 0) { hd = Math.atan2(food.y - f.y, Math.max(.15 * ds, (food.x - f.x) * f.dir)); f.vT = cruise * (fd < 1.2 * ds ? .5 : 1.3); f.mode = fd < 1.2 * ds ? 0 : 1; f.gT = food.g; if (fd < f.size * .35) { food.dead = true; food.eatenT = 0; f.mode = 0; f.modeT = 1.5; } }
-    else if (f.leader) { const Ld = f.leader, tox = f.ox + Math.sin(time * f.of1 + f.oph) * .55, toy = f.oy + Math.sin(time * f.of2 + f.oph * 1.3) * .4, tx = Ld.x - f.dir * tox * ds, ty = Ld.y + toy * ds, along = (tx - f.x) * f.dir;
-      hd = Math.atan2(ty - f.y, Math.max(.4 * ds, along + ds)) + (fbm(time * .25 + f.seed, 1.3, 3, 2) - .5) * .35; f.vT = Math.max(.1, Ld.v * f.spdK * clamp(1 + along / (2 * ds), .5, 1.8));
-      if (Math.random() < dt * .6) f.mode = Ld.mode; }
-    if (f.panic > 0) hd = f.panicDir * .75;
-    hd = clamp(hd, -1, 1);
-    const acc = (hd - f.h) * 5 - f.w * 4.2; f.w = clamp(f.w + acc * dt, -1.4, 1.4); f.h += f.w * dt;
-    f.v += (f.vT - f.v) * Math.min(1, dt * (f.mode ? 2 : .6));
-    f.x += (f.dir * f.v * Math.cos(f.h) + (cur * .15 + surge * .12) * ds) * dt; f.y += f.v * Math.sin(f.h) * dt;
-    if (!f.leader && f.dir * f.x > fishEdge(f)) {
-      const members = fishes.filter(o => o.leader === f);
-      if (members.every(o => o.dir * o.x > fishEdge(o))) {
-        const edge = fishEdge(f), nx = -f.dir * edge, ny = (Math.random() * 1.3 - .7) * vh, dx = nx - f.x, dy = ny - f.y; f.x = nx; f.y = ny; f.h = f.w = 0;
-        for (const o of members) { o.x += dx; o.y += dy; o.h = o.w = 0; }
-        if (!steady) { f.g = f.gT = randomG(f.sp); }
+    if (f.state === 'peck' && f.panic <= 0) {
+      const pk = f.pk; pk.t -= dt; f.h += (-.5 - f.h) * Math.min(1, dt * 2.5); f.w = 0;
+      pk.ph += dt; const jab = Math.pow(.5 + .5 * Math.sin(pk.ph * 2.6), 6), reach = f.size * (.62 - jab * .14 + .03 * Math.sin(pk.ph * .7));
+      const tx = pk.x - f.dir * Math.cos(f.h) * reach, ty = pk.y - Math.sin(f.h) * reach, k = Math.min(1, dt * 2);
+      f.x += (tx - f.x) * k; f.y += (ty - f.y) * k; f.v = cruise * .1; f.vT = f.v; f.mode = 0; f.beat += (.14 - f.beat) * Math.min(1, dt * 2);
+      if (pk.t <= 0) { f.state = 'swim'; f.mode = 1; f.modeT = 1.2; f.vT = cruise * 1.3; }
+    } else {
+      if (f.state === 'peck') f.state = 'swim';
+      if (f.panic > 0) { f.panic -= dt; f.mode = 1; f.vT = cruise * 2.8; }
+      else if (steady) { f.mode = 1; f.vT = cruise; }
+      else if (!f.leader) { f.modeT -= dt; if (f.modeT <= 0) { if (f.mode) { f.mode = 0; f.modeT = lerp(.9, 2.8, Math.random()) * f.calm; f.vT = cruise * lerp(.3, .55, Math.random()); } else { f.mode = 1; f.modeT = lerp(.5, 1.4, Math.random()); f.vT = cruise * lerp(1, 1.6, Math.random()); } } }
+      let hd = (fbm(time * .07 + f.seed, f.seed * .37, 7, 2) - .5) * 1.7 * D.wander;
+      const yn = f.y / vh; if (yn > .62) hd -= (yn - .62) * 3; if (yn < -.7) hd += (-.7 - yn) * 3;
+      let food = null, fd = 4.5 * ds;
+      if (!steady) for (const fo of foods) { if (fo.dead || Math.abs(fo.g - f.g) > 1.6) continue; if ((fo.x - f.x) * f.dir < -.1 * ds) continue; const d = Math.hypot(fo.x - f.x, fo.y - f.y); if (d < fd) { fd = d; food = fo; } }
+      if (food && f.panic <= 0) { hd = Math.atan2(food.y - f.y, Math.max(.15 * ds, (food.x - f.x) * f.dir)); f.vT = cruise * (fd < 1.2 * ds ? .5 : 1.3); f.mode = fd < 1.2 * ds ? 0 : 1; f.gT = food.g; if (fd < f.size * .35) { food.dead = true; food.eatenT = 0; f.mode = 0; f.modeT = 1.5; } }
+      else if (f.leader) { const Ld = f.leader, tox = f.ox + Math.sin(time * f.of1 + f.oph) * .55, toy = f.oy + Math.sin(time * f.of2 + f.oph * 1.3) * .4, tx = Ld.x - f.dir * tox * ds, ty = Ld.y + toy * ds, along = (tx - f.x) * f.dir;
+        hd = Math.atan2(ty - f.y, Math.max(.4 * ds, along + ds)) + (fbm(time * .25 + f.seed, 1.3, 3, 2) - .5) * .35; f.vT = Math.max(.1, Ld.v * f.spdK * clamp(1 + along / (2 * ds), .5, 1.8));
+        if (Math.random() < dt * .6) f.mode = Ld.mode; }
+      else if (D.peck && S.peck > 0 && f.panic <= 0) { f.peckT -= dt * S.peck; if (f.peckT <= 0) { f.peckT = rnd(10, 24); tryPeck(f, N); } }
+      if (f.panic > 0) hd = f.panicDir * .75;
+      hd = clamp(hd, -1, 1);
+      const acc = (hd - f.h) * 5 - f.w * 4.2; f.w = clamp(f.w + acc * dt, -1.4, 1.4); f.h += f.w * dt;
+      f.v += (f.vT - f.v) * Math.min(1, dt * (f.mode ? 2 : .6));
+      f.x += (f.dir * f.v * Math.cos(f.h) + (cur * .15 + surge * .12) * ds) * dt; f.y += f.v * Math.sin(f.h) * dt;
+      if (!f.leader && f.dir * f.x > fishEdge(f)) {
+        const members = fishes.filter(o => o.leader === f);
+        if (members.every(o => o.dir * o.x > fishEdge(o))) {
+          const nx = -f.dir * fishEdge(f), ny = (Math.random() * 1.3 - .7) * vh, dx = nx - f.x, dy = ny - f.y; f.x = nx; f.y = ny; f.h = f.w = 0;
+          for (const o of members) { o.x += dx; o.y += dy; o.h = o.w = 0; }
+          if (!steady) f.g = f.gT = randomG(f.sp);
+        }
       }
     }
     const rel = f.v / (cruise + 1e-4), bT = f.mode ? clamp(.55 + rel * .45, .5, 1.4) : clamp(rel * .35, .06, .35);
-    f.beat += (bT - f.beat) * Math.min(1, dt * 2.5);
+    if (f.state !== 'peck') f.beat += (bT - f.beat) * Math.min(1, dt * 2.5);
     f.phase += dt * Math.PI * 2 * D.hz * f.hzK * (f.mode ? .65 + rel * .55 : .4) * (f.panic > 0 ? 1.5 : 1);
-    f.pectPh += dt * Math.PI * 2 * (.5 + (1 - clamp(rel, 0, 1)) * .7) * D.ps * f.hzK;
+    f.pectPh += dt * Math.PI * 2 * (.5 + (1 - clamp(rel, 0, 1)) * .7) * Math.max(.4, D.ps) * f.hzK;
     G.scale.set(f.size * f.dir, f.size, 1); G.rotation.z = f.h * f.dir;
     const beat = f.beat * D.amp, turn = clamp(-f.w * .5, -.5, .5), slow = 1 - clamp(rel, 0, 1);
     f.U.uPhase.value = f.phase; f.U.uBeat.value = beat; f.U.uTurn.value = turn;
-    for (const {m, p} of f.partObjs) {
-      if (p.anim === 'body' || p.anim === 'none') continue;
-      const [wy, sl] = waveAt(p.pivot[0], f.phase, beat, turn); m.position.y = p.pivot[1] + wy; const base = Math.atan(sl);
-      if (p.anim === 'tail') { m.rotation.z = base + Math.sin(f.phase - 3.5) * beat * .2; m.scale.x = .62 + .38 * Math.abs(Math.cos(f.phase - 3.5)); }
-      else if (p.anim === 'dorsal') { m.rotation.z = base * .8 + Math.sin(f.phase - 2) * beat * .08 - turn * .18; m.scale.y = .9 + .14 * slow; }
-      else if (p.anim === 'anal') { m.rotation.z = base * .8 + Math.sin(f.phase - 2.4) * beat * .08 + turn * .18; m.scale.y = .9 + .1 * slow; }
-      else if (p.anim === 'pect') { m.rotation.z = -.15 + Math.sin(f.pectPh) * (.18 + slow * .32); m.scale.x = .75 + .25 * Math.cos(f.pectPh); }
-      else if (p.anim === 'pelvic') { m.rotation.z = Math.sin(f.pectPh * 1.3 + 1) * .14; }
-    }
+    animParts(f, beat, turn, slow);
     if (S.fishTrails > 0 && !steady) { f.trailT -= dt * S.fishTrails * (f.mode ? 1.3 : .7); if (f.trailT <= 0) { f.trailT = rnd(1.5, 5);
       const c = Math.cos(G.rotation.z), s = Math.sin(G.rotation.z), lx = f.model.mouth[0] * f.size * f.dir, ly = f.model.mouth[1] * f.size, n = 1 + Math.floor(Math.random() * 3);
       for (let k = 0; k < n; k++) emitTrail(f.x + c * lx - s * ly + (Math.random() - .5) * .05, f.y + s * lx + c * ly + k * .06 * ds, z + .02, ds); } }
   }
   G.position.set(f.x, f.y, z);
-  const tt = clamp(-z / S.depth, 0, 1); colorAt(tt, _c1); f.U.uDepthT.value = tt;
-  const sh = f.model.shadow, so = (.02 + S.shadowDist * .08);
-  f.shadow.position.set(sh.cx + so * .6 * (f.sp === 'jelly' ? 1 : f.dir), sh.cy - so, -.06); f.shadow.scale.set(sh.w * (1 + S.shadowSoft * .15), sh.h * (1 + S.shadowSoft * .15), 1);
-  colorAt(tt + .08, _c3); f.shadow.material.color.copy(_c3).multiplyScalar(.35); f.shadow.material.opacity = S.shadows * .55;
+  paintCreature(f, clamp(-z / S.depth, 0, 1), f.sp === 'jelly' ? 1 : f.dir);
+}
+function paintCreature(f, tt, dirS){
+  colorAt(tt, _c1); f.U.uDepthT.value = tt;
+  const sh = f.model.shadow, so = (.02 + S.shadowDist * .08), [lx, ly] = lightDir();
+  f.shadow.visible = S.fishShadows;
+  if (S.fishShadows) { f.shadow.position.set(sh.cx - lx * so * dirS, sh.cy - ly * so, -.06); const sk = 1 + S.shadowSoft * .15; f.shadow.scale.set(sh.w * sk, sh.h * sk, 1);
+    colorAt(tt + .08, _c3); f.shadow.material.color.copy(_c3).multiplyScalar(.35); f.shadow.material.opacity = S.shadows * .55; }
   const M = f.mats;
-  if (f.sp === 'jelly') { _c2.copy(_c1).lerp(cL, .35 + S.plankton * .4); setSlot(M, 'A', _c2); _c3.copy(_c2).lerp(_c1, .4); setSlot(M, 'B', _c3); _c3.copy(_c2).lerp(cL, .3); setSlot(M, 'C', _c3); }
-  else {
-    if (S.fishStyle === 'light') _c2.copy(_c1).lerp(cL, .72 * (1 - tt * .55));
-    else if (S.fishStyle === 'silhouette' || !f.accent) _c2.copy(_c1).lerp(cFront, .35);
-    else { const aw = accentWeight(tt); _c2.copy(_c1).lerp(cFront, .35 - aw * .35).lerp(ACC[f.accentIdx], aw); }
-    setSlot(M, 'A', _c2); _c3.copy(_c2).multiplyScalar(.82); setSlot(M, 'B', _c3); _c3.copy(_c2).lerp(cL, S.fishStyle === 'accent' ? .35 : .15); setSlot(M, 'C', _c3); _c3.copy(_c2).multiplyScalar(.6); setSlot(M, 'D', _c3);
-  }
+  if (f.sp === 'jelly') { _c2.copy(_c1).lerp(cL, .35 + S.plankton * .4); setSlot(M, 'A', _c2); _c3.copy(_c2).lerp(_c1, .4); setSlot(M, 'B', _c3); _c3.copy(_c2).lerp(cL, .3); setSlot(M, 'C', _c3); return; }
+  if (S.fishStyle === 'light') _c2.copy(_c1).lerp(cL, .72 * (1 - tt * .55));
+  else if (S.fishStyle === 'silhouette' || S.fishStyle === 'single' || !f.accent) _c2.copy(_c1).lerp(cFront, .35);
+  else { const aw = accentWeight(tt); _c2.copy(_c1).lerp(cFront, .35 - aw * .35).lerp(ACC[f.accentIdx], aw); }
+  setSlot(M, 'A', _c2);
+  if (S.fishStyle === 'single') { setSlot(M, 'B', _c2); setSlot(M, 'C', _c2); setSlot(M, 'D', _c2); return; }
+  _c3.copy(_c2).multiplyScalar(.82); setSlot(M, 'B', _c3); _c3.copy(_c2).lerp(cL, S.fishStyle === 'accent' ? .35 : .15); setSlot(M, 'C', _c3); _c3.copy(_c2).multiplyScalar(.6); setSlot(M, 'D', _c3);
 }
 function setSlot(M, slot, col){ for (const k in M) if (k[0] === slot) M[k].uniforms.uColor.value.copy(col); }
+
+/* ================= crawlers: crabs and starfish ================= */
+function placeCrawlers(){
+  for (const c of crawlers) disposeCreature(c); crawlers = [];
+  const N = layers.length; if (N < 3 || !layers[1].data) return;
+  const cand = layers.filter((L, i) => i < N - 1 && L.data && L.t > Math.max(.08, tMinFish()) && L.t < .65); if (!cand.length) return;
+  const r = Math.random;
+  const want = [['crab', S.fishTypes.crab ? Math.round(1 + S.fishDensity * 3) : 0], ['starfish', S.fishTypes.starfish ? Math.round(1 + S.fishDensity * 4) : 0]];
+  for (const [sp, n] of want) for (let k = 0; k < n; k++) {
+    const L = cand[Math.floor(r() * cand.length)], s = findSurface(L, r, false, 2); if (!s) continue;
+    const C = buildCreature(sp), ds = depthScale(L.z), D = SPECIES[sp];
+    const c = Object.assign(C, {sp, L, x:(s.u - .5) * 2 * L.hw, y:(s.vs - .5) * 2 * L.hh, dir:r() < .5 ? 1 : -1, size:lerp(D.size[0], D.size[1], r()) * ds * S.fishSize, speed:(sp === 'crab' ? rnd(.25, .5) : rnd(.01, .03)) * ds,
+      state:'pause', timer:rnd(1, 4), legPh:r() * 6, clawPh:r() * 6, walk:0, seed:r() * 50});
+    c.group.rotation.z = sp === 'starfish' ? r() * 6 : 0; crawlers.push(c);
+  }
+  updateEditVisuals();
+}
+function updateCrawler(c, dt){
+  const L = c.L; if (!layers.includes(L)) return;
+  c.timer -= dt; const vh = L.vh, edge = vh * aspect * .95;
+  if (c.sp === 'crab') {
+    if (c.timer <= 0) { if (c.state === 'walk') { c.state = 'pause'; c.timer = rnd(1.5, 5); } else { c.state = 'walk'; c.timer = rnd(1.5, 5); if (Math.random() < .4) c.dir *= -1; } }
+    c.walk += ((c.state === 'walk' ? 1 : 0) - c.walk) * Math.min(1, dt * 4);
+    const nx = c.x + c.dir * c.speed * c.walk * dt, ny = surfaceNear(L, nx, c.y, c.size * .8);
+    if (ny === null || Math.abs(nx) > edge) { c.dir *= -1; } else { c.x = nx; c.y += (ny - c.y) * Math.min(1, dt * 8); }
+    c.legPh += dt * c.walk * 9; c.clawPh += dt * (c.state === 'pause' ? 2.2 : .8);
+    for (const {m, p} of c.partObjs) {
+      if (p.anim === 'leg') m.rotation.z = p.side * Math.sin(c.legPh + p.idx * 2.1 + (p.side > 0 ? Math.PI : 0)) * .32 * c.walk;
+      else if (p.anim === 'claw') m.rotation.z = p.side * (-.08 + Math.sin(c.clawPh) * .12);
+      else if (p.anim === 'jaw') m.rotation.z = p.side * (-.08 + Math.sin(c.clawPh) * .12) + p.side * Math.max(0, Math.sin(c.clawPh * 3.2)) * .25 * (1 - c.walk);
+    }
+    c.group.scale.set(c.size, c.size, 1);
+    c.group.position.set(c.x, c.y + c.size * .3 + Math.abs(Math.sin(c.legPh)) * c.size * .03 * c.walk, L.z + .05);
+  } else {
+    if (c.timer <= 0) { c.timer = rnd(4, 12); c.dir *= -1; }
+    const nx = c.x + c.dir * c.speed * dt, ny = surfaceNear(L, nx, c.y, c.size * .5);
+    if (ny !== null && Math.abs(nx) < edge) { c.x = nx; c.y += (ny - c.y) * Math.min(1, dt * 4); } else c.dir *= -1;
+    c.U.uPhase.value = c.seed; c.group.scale.set(c.size, c.size, 1); c.group.position.set(c.x, c.y + c.size * .08, L.z + .05);
+  }
+  paintCreature(c, clamp(L.t, 0, 1), 1);
+}
 
 /* ================= food ================= */
 let foods = [], foodMat = null, foodGeo = null;
@@ -1147,9 +1395,10 @@ function updateFood(dt){
 }
 
 /* ================= camera & input ================= */
-const cam = {x:0, y:0, vx:0, vy:0, z:BASE_Z, zT:BASE_Z, fov:BASE_FOV, fovT:BASE_FOV, nudge:0, nudgeV:0, bob:1};
+const cam = {x:0, y:0, vx:0, vy:0, z:8, zT:8, fov:40, fovT:40, nudge:0, nudgeV:0, bob:1};
 let dragging = false, time = 0, focusTarget = null;
 const ripple = {t:-10, x:0, y:0};
+function resetLens(){ cam.z = cam.zT = baseZ(); cam.fov = cam.fovT = baseFov(); camera.fov = cam.fov; camera.updateProjectionMatrix(); updatePix(); }
 function updateCamera(dt){
   const pm = panMax();
   if (!dragging) {
@@ -1158,24 +1407,30 @@ function updateCamera(dt){
     if (Math.abs(cam.x) > pm) cam.x += (Math.sign(cam.x) * pm - cam.x) * sk; if (Math.abs(cam.y) > pm * .75) cam.y += (Math.sign(cam.y) * pm * .75 - cam.y) * sk;
     if (S.returnHome || editMode) { const k = 1 - Math.exp(-dt * (editMode ? 3 : .22)); cam.x -= cam.x * k; cam.y -= cam.y * k; }
   }
-  if (S.pinchMode === 'zoom') cam.zT = BASE_Z; else cam.fovT = BASE_FOV;
+  if (S.pinchMode === 'zoom') cam.zT = baseZ(); else cam.fovT = baseFov();
   cam.z += (cam.zT - cam.z) * (1 - Math.exp(-dt * 5)); cam.fov += (cam.fovT - cam.fov) * (1 - Math.exp(-dt * 5));
   cam.nudgeV += (-cam.nudge * 40 - cam.nudgeV * 7) * dt; cam.nudge += cam.nudgeV * dt;
   cam.bob += ((editMode ? 0 : 1) - cam.bob) * (1 - Math.exp(-dt * 2));
-  const tb = time * (.2 + S.bobSpeed * .8), b = cam.bob;
-  const bx = S.bobX * .22 * (Math.sin(tb * .71) + .45 * Math.sin(tb * 1.43 + 1.3)) * b, by = S.bobY * .2 * (Math.sin(tb * .53 + .7) + .4 * Math.sin(tb * 1.9)) * b;
-  const bz = S.bobZ * .4 * (Math.sin(tb * .37 + 2.1) + .3 * Math.sin(tb * 1.1)) * b, roll = S.bobRoll * .014 * Math.sin(tb * .43 + .4) * b;
-  camera.position.set(cam.x + bx, cam.y + by, cam.z + bz + cam.nudge); camera.rotation.set(0, 0, roll);
-  if (Math.abs(camera.fov - cam.fov) > 1e-4) { camera.fov = cam.fov; camera.updateProjectionMatrix(); updatePix(); }
+  const tb = time * (.2 + S.bobSpeed * .8), b = cam.bob, zk = baseZ() / 8;
+  const bx = S.bobX * .22 * zk * (Math.sin(tb * .71) + .45 * Math.sin(tb * 1.43 + 1.3)) * b, by = S.bobY * .2 * zk * (Math.sin(tb * .53 + .7) + .4 * Math.sin(tb * 1.9)) * b;
+  const bz = S.bobZ * .4 * zk * (Math.sin(tb * .37 + 2.1) + .3 * Math.sin(tb * 1.1)) * b, roll = S.bobRoll * .014 * Math.sin(tb * .43 + .4) * b;
+  const [ox, oy] = viewOff();
+  camera.position.set(cam.x + bx + ox, cam.y + by + oy, cam.z + bz + cam.nudge); camera.rotation.set(0, 0, roll);
+  let projDirty = false;
+  if (Math.abs(camera.fov - cam.fov) > 1e-4) { camera.fov = cam.fov; projDirty = true; }
+  if (ox || oy) { const cz = cam.z, tf = Math.tan(camera.fov * Math.PI / 360), W = innerWidth, H = innerHeight; camera.setViewOffset(W, H, -(W / 2) * ox / (cz * tf * aspect), (H / 2) * oy / (cz * tf), W, H); }
+  else if (camera.view && camera.view.enabled) camera.clearViewOffset();
+  else if (projDirty) camera.updateProjectionMatrix();
+  if (projDirty) updatePix();
   if (focusTarget !== null) { S.focus += (focusTarget - S.focus) * Math.min(1, dt * 4); shared.uFocus.value = S.focus; if (Math.abs(focusTarget - S.focus) < .002) { focusTarget = null; if (controls.focus) controls.focus.set(S.focus); saveSettings(); } }
 }
-function updatePix(){ const sz = new THREE.Vector2(); renderer.getDrawingBufferSize(sz); shared.uRes.value.copy(sz); shared.uPix.value = sz.y / (2 * Math.tan(camera.fov * Math.PI / 360)); if (dofMat) dofMat.uniforms.uRes.value.copy(sz); }
+function updatePix(){ const sz = new THREE.Vector2(); renderer.getDrawingBufferSize(sz); shared.uRes.value.copy(sz); shared.uPix.value = sz.y / (2 * Math.tan(camera.fov * Math.PI / 360)); if (postMat) postMat.uniforms.uRes.value.copy(sz); }
 function toNDC(cx, cy){ return new THREE.Vector2(cx / innerWidth * 2 - 1, -(cy / innerHeight) * 2 + 1); }
 function worldPerPx(){ const zm = -S.depth * clamp(S.accentDepth, .1, .5); return 2 * viewHalfH(zm, cam.z, cam.fov) / innerHeight; }
 const pointers = new Map(); let drag = null, pinch = null, stroke = null;
 canvas.addEventListener('pointerdown', e => {
   canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
-  document.body.classList.add('started'); if (S.sound) ensureAudio();
+  document.body.classList.add('started'); if (S.sound || S.music) ensureAudio();
   if (pointers.size === 1) { if (editMode) startStroke(e); else { drag = {x0:e.clientX, y0:e.clientY, lx:e.clientX, ly:e.clientY, t0:performance.now(), lt:performance.now(), vx:0, vy:0, moved:false}; dragging = true; cam.vx = cam.vy = 0; } }
   else if (pointers.size === 2) { if (stroke) endStroke(); drag = null; dragging = false; const [a, b] = [...pointers.values()]; pinch = {d:Math.hypot(a.x - b.x, a.y - b.y) || 1, z:cam.zT, fov:cam.fovT}; }
 });
@@ -1206,10 +1461,10 @@ function endPointer(e){
 canvas.addEventListener('pointerup', endPointer); canvas.addEventListener('pointercancel', endPointer);
 canvas.addEventListener('pointerleave', () => $('#brush').classList.remove('on'));
 canvas.addEventListener('wheel', e => { e.preventDefault(); applyZoom({z:cam.zT, fov:cam.fovT}, Math.exp(e.deltaY * .0012)); }, {passive:false});
-function applyZoom(base, f){ if (S.pinchMode === 'zoom') cam.fovT = clamp(base.fov * f, 24, 56); else cam.zT = clamp(base.z * f, BASE_Z * .65, BASE_Z * 1.4); }
+function applyZoom(base, f){ if (S.pinchMode === 'zoom') cam.fovT = clamp(base.fov * f, baseFov() * .6, Math.min(85, baseFov() * 1.4)); else cam.zT = clamp(base.z * f, baseZ() * .65, baseZ() * 1.4); }
 function depthAtNDC(ndc){
   let best = null; const v = new THREE.Vector3();
-  for (const f of fishes) { if (!f.group.visible) continue; const z = zAtG(f.g); v.set(f.x, f.y, z).project(camera); const vhz = viewHalfH(z, camera.position.z, camera.fov);
+  for (const f of fishes.concat(crawlers)) { if (!f.group.visible) continue; const z = f.group.position.z; v.set(f.group.position.x, f.group.position.y, z).project(camera); const vhz = viewHalfH(z, camera.position.z, camera.fov);
     if (Math.hypot((v.x - ndc.x) * aspect, v.y - ndc.y) < f.size * .5 / vhz) { const t = clamp(-z / S.depth, 0, 1); if (best === null || t < best) best = t; } }
   for (const L of layers) { if (best !== null && L.t > best) break; const p = rayToZ(ndc, L.z), u = p.x / (2 * L.hw) + .5, w = p.y / (2 * L.hh) + .5;
     if (u < 0 || u > 1 || w < 0 || w > 1 || !L.data) continue; if (L.data[Math.floor(w * L.texH) * L.texW + Math.floor(u * L.texW)] > 127) { const t = clamp(L.t, 0, 1); if (best === null || t < best) best = t; break; } }
@@ -1229,20 +1484,21 @@ function onTap(cx, cy){
     const z = zAtG(f.g); v.set(f.x, f.y, z).project(camera);
     const dx = (v.x - ndc.x) * aspect, dy = v.y - ndc.y, d = Math.hypot(dx, dy);
     if (d < .5) { const react = (1 - d / .5) * (1.25 - clamp(-z / S.depth, 0, 1)); if (react <= 0) continue;
-      if (f.sp === 'jelly') { f.vy += Math.sign(dy || 1) * react * .5; continue; }
-      f.panic = .8 + react * .8; f.panicDir = dy >= 0 ? 1 : -1; f.w += f.panicDir * react * 1.5; }
+      if (f.sp === 'jelly' || SPECIES[f.sp].hover) { f.vy += Math.sign(dy || 1) * react * .5; f.y += Math.sign(dy || 1) * react * .15; continue; }
+      f.state = 'swim'; f.panic = .8 + react * .8; f.panicDir = dy >= 0 ? 1 : -1; f.w += f.panicDir * react * 1.5; }
   }
+  for (const c of crawlers) if (c.sp === 'crab') { c.state = 'walk'; c.timer = rnd(1, 2.5); c.dir = Math.random() < .5 ? 1 : -1; }
 }
 
 /* ================= edit mode ================= */
 let editMode = false, foodMode = false;
 const edit = {layer:2, tool:'fill', brush:1.6, isolate:false, grid:true, undo:[]};
-const gridMat = new THREE.ShaderMaterial({uniforms:{uGridN:{value:new THREE.Vector2(1,1)}, uCol:{value:new THREE.Color(1,1,1)}}, vertexShader:'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }', fragmentShader:GRID_FS, transparent:true, depthWrite:false, depthTest:false, extensions:{derivatives:true}});
+const gridMat = new THREE.ShaderMaterial({uniforms:{uGridN:{value:new THREE.Vector2(1,1)}, uCol:{value:new THREE.Color()}}, vertexShader:'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }', fragmentShader:GRID_FS, transparent:true, depthWrite:false, depthTest:false, extensions:{derivatives:true}});
 const gridMesh = new THREE.Mesh(planeGeo, gridMat); gridMesh.visible = false; gridMesh.frustumCulled = false; gridMesh.renderOrder = 999; scene.add(gridMesh);
 function cellAt(cx, cy, L){ const p = rayToZ(toNDC(cx, cy), L.z); return {ci:(p.x / (2 * L.hw) + .5) * L.gx, cj:(p.y / (2 * L.hh) + .5) * L.gy}; }
 function paintAt(cx, cy){
   const L = layers[edit.layer]; if (!L || !L.grid) return;
-  const {ci, cj} = cellAt(cx, cy, L), r = edit.brush, val = edit.tool === 'fill' ? 1 : 0; let changed = false;
+  const {ci, cj} = cellAt(cx, cy, L), r = edit.brush, val = edit.tool === 'fill' ? 255 : 0; let changed = false;
   for (let j = Math.floor(cj - r); j <= Math.ceil(cj + r); j++) for (let i = Math.floor(ci - r); i <= Math.ceil(ci + r); i++) {
     if (i < 0 || j < 0 || i >= L.gx || j >= L.gy) continue;
     if ((i + .5 - ci) ** 2 + (j + .5 - cj) ** 2 <= r * r) { const k = j * L.gx + i; if (L.grid[k] !== val) { L.grid[k] = val; changed = true; } }
@@ -1252,7 +1508,7 @@ function paintAt(cx, cy){
 function pushUndo(L){ edit.undo.push({L, grid:L.grid.slice(), gx:L.gx, gy:L.gy, edited:L.edited}); if (edit.undo.length > 40) edit.undo.shift(); }
 function startStroke(e){ const L = layers[edit.layer]; if (!L || !L.grid) return; pushUndo(L); stroke = {lx:e.clientX, ly:e.clientY}; paintAt(e.clientX, e.clientY); }
 function moveStroke(e){ const dx = e.clientX - stroke.lx, dy = e.clientY - stroke.ly, steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 6)); for (let s = 1; s <= steps; s++) paintAt(stroke.lx + dx * s / steps, stroke.ly + dy * s / steps); stroke.lx = e.clientX; stroke.ly = e.clientY; }
-function endStroke(){ if (!stroke) return; stroke = null; const L = layers[edit.layer]; if (L) queueBuild(L, true); bubblesDirty = true; saveScene(); syncEditUI(); }
+function endStroke(){ if (!stroke) return; stroke = null; const L = layers[edit.layer]; if (L) queueBuild(L, true); bubblesDirty = true; crawlDirty = true; saveScene(); syncEditUI(); }
 function updateBrushCursor(e){
   const el = $('#brush'); if (!editMode || (e.pointerType === 'touch' && !pointers.size)) { el.classList.remove('on'); return; }
   const L = layers[edit.layer]; if (!L) return;
@@ -1267,7 +1523,7 @@ function updateEditVisuals(){
   const L = layers[sel];
   gridMesh.visible = editMode && edit.grid && !!L;
   if (L) { gridMesh.position.set(0, 0, L.z + .02); gridMesh.scale.set(L.hw * 2, L.hh * 2, 1); gridMat.uniforms.uGridN.value.set(L.gx, L.gy); gridMat.uniforms.uCol.value.copy(cL); }
-  for (const f of fishes) f.group.visible = !editMode;
+  for (const f of fishes) f.group.visible = !editMode; for (const c of crawlers) c.group.visible = !editMode;
   const hide = editMode && edit.isolate; for (const p of [snow, plank, bubPts, trailPts]) if (p) p.visible = !hide; for (const o of rays) o.mesh.visible = !hide; for (const f of foods) f.mesh.visible = !editMode;
   shared.uDofOn.value = S.dof && !editMode ? 1 : 0;
 }
@@ -1296,17 +1552,15 @@ $('#eIsolate').onclick = () => { edit.isolate = !edit.isolate; syncEditUI(); };
 $('#eGrid').onclick = () => { edit.grid = !edit.grid; syncEditUI(); };
 $('#eUndo').onclick = () => { const u = edit.undo.pop(); if (!u || !layers.includes(u.L)) { syncEditUI(); return; } Object.assign(u.L, {grid:u.grid, gx:u.gx, gy:u.gy, edited:u.edited}); queueBuild(u.L, true); bubblesDirty = true; saveScene(); syncEditUI(); };
 const fillSheet = v => { const L = layers[edit.layer]; pushUndo(L); L.grid.fill(v); L.edited = true; queueBuild(L, true); bubblesDirty = true; saveScene(); syncEditUI(); };
-$('#eFill').onclick = () => fillSheet(1);
+$('#eFill').onclick = () => fillSheet(255);
 $('#eClear').onclick = () => fillSheet(0);
 $('#eReset').onclick = () => { const L = layers[edit.layer]; pushUndo(L); L.edited = false; L.nudge = 0; applyLayout(false); refitGrids(); saveScene(); syncEditUI(); };
 $('#eDone').onclick = () => setEdit(false);
 
 /* ================= layer count & persistence ================= */
-function rle(a){ const out = []; let cur = 0, run = 0; for (let i = 0; i < a.length; i++) { if (a[i] === cur) run++; else { out.push(run); cur = a[i]; run = 1; } } out.push(run); return out.join(','); }
-function unrle(s, len){ const a = new Uint8Array(len); let p = 0, cur = 0; for (const r of s.split(',')) { const n = +r; a.fill(cur, p, Math.min(len, p + n)); p += n; cur ^= 1; } return a; }
-function saveScene(){ try { const N = layers.length, list = []; layers.forEach((L, i) => { if (L.edited || L.nudge) list.push({t:i / (N - 1), gx:L.gx, gy:L.gy, g:L.edited ? rle(L.grid) : null, n:L.nudge || 0}); }); localStorage.setItem(STORE + '.scene', JSON.stringify({list})); } catch (e) {} }
+function saveScene(){ try { const N = layers.length, list = []; layers.forEach((L, i) => { if (L.edited || L.nudge) list.push({t:i / (N - 1), gx:L.gx, gy:L.gy, g:L.edited ? b64(L.grid) : null, n:L.nudge || 0}); }); localStorage.setItem(STORE + '.scene', JSON.stringify({list})); } catch (e) {} }
 function loadScene(){ try { const s = JSON.parse(localStorage.getItem(STORE + '.scene') || 'null'); if (!s || !s.list) return; const N = layers.length, taken = new Set();
-  for (const e of s.list) { const i = Math.round(e.t * (N - 1)); if (taken.has(i)) continue; taken.add(i); const L = layers[i]; if (e.g) { L.grid = unrle(e.g, e.gx * e.gy); L.gx = e.gx; L.gy = e.gy; L.edited = true; } L.nudge = e.n || 0; } } catch (e) {} }
+  for (const e of s.list) { const i = Math.round(e.t * (N - 1)); if (taken.has(i)) continue; taken.add(i); const L = layers[i]; if (e.g) { const u = unb64(e.g); if (u.length === e.gx * e.gy) { L.grid = u; L.gx = e.gx; L.gy = e.gy; L.edited = true; } } L.nudge = e.n || 0; } } catch (e) {} }
 function setLayerCount(n){
   const old = layers, oN = old.length; if (n === oN) return;
   const nl = []; for (let i = 0; i < n; i++) nl.push(i === 0 ? old[0] : i === n - 1 ? old[oN - 1] : null);
@@ -1318,8 +1572,11 @@ function setLayerCount(n){
   applyLayout(true); refitGrids(); rebuildFish(); saveScene(); if (editMode) syncEditUI();
 }
 
-/* ================= audio ================= */
-let AC = null, master = null, bubbleClock = 3;
+/* ================= audio: ambience, effects, music ================= */
+let AC = null, master = null, musGain = null, musIn = null, bubbleClock = 3, musNext = 0, chordIdx = 0, bellNext = 0;
+const CHORDS = [[50,57,62,64,69],[47,54,62,66,69],[43,55,59,62,66],[45,52,57,62,64],[50,57,61,64,69],[42,54,57,61,66]];
+const BELLS = [62,64,66,69,71,74,76,78,81];
+const mf = m => 440 * Math.pow(2, (m - 69) / 12);
 function ensureAudio(){
   if (!AC) { try {
     AC = new (window.AudioContext || window.webkitAudioContext)(); master = AC.createGain(); master.gain.value = 0; master.connect(AC.destination);
@@ -1330,10 +1587,34 @@ function ensureAudio(){
     const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 300; lp.Q.value = .6;
     const lfo = AC.createOscillator(); lfo.frequency.value = .05; const lg = AC.createGain(); lg.gain.value = 110; lfo.connect(lg); lg.connect(lp.frequency);
     const ag = AC.createGain(); ag.gain.value = .75; src.connect(lp); lp.connect(ag); ag.connect(master); src.start(); lfo.start();
+    musGain = AC.createGain(); musGain.gain.value = 0; musGain.connect(AC.destination);
+    musIn = AC.createGain(); const tone = AC.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 2600; musIn.connect(tone);
+    const dry = AC.createGain(); dry.gain.value = .65; tone.connect(dry); dry.connect(musGain);
+    const d1 = AC.createDelay(2), d2 = AC.createDelay(2), f1 = AC.createGain(), f2 = AC.createGain(), dl = AC.createBiquadFilter(), wet = AC.createGain();
+    d1.delayTime.value = .37; d2.delayTime.value = .53; f1.gain.value = .5; f2.gain.value = .45; dl.type = 'lowpass'; dl.frequency.value = 1700; wet.gain.value = .5;
+    tone.connect(d1); d1.connect(dl); dl.connect(f1); f1.connect(d2); d2.connect(f2); f2.connect(d1); d1.connect(wet); d2.connect(wet); wet.connect(musGain);
+    musNext = AC.currentTime + .5; bellNext = AC.currentTime + 3;
   } catch (e) { AC = null; return; } }
   if (AC.state === 'suspended') AC.resume(); setVolume();
 }
-function setVolume(){ if (AC) master.gain.setTargetAtTime(S.sound ? S.volume * .7 : 0, AC.currentTime, .5); }
+function setVolume(){ if (!AC) return; master.gain.setTargetAtTime(S.sound ? S.volume * .7 : 0, AC.currentTime, .5); musGain.gain.setTargetAtTime(S.music ? S.musicVol * .9 : 0, AC.currentTime, 1.2); }
+function playChord(notes, t0, dur){
+  for (const n of notes) for (const [type, det, g] of [['sine', 0, .045], ['triangle', 7, .012]]) {
+    const o = AC.createOscillator(); o.type = type; o.frequency.value = mf(n); o.detune.value = det + (Math.random() - .5) * 8;
+    const ga = AC.createGain(); ga.gain.setValueAtTime(0, t0); ga.gain.linearRampToValueAtTime(g, t0 + 3.5); ga.gain.setValueAtTime(g, t0 + dur - 4.5); ga.gain.linearRampToValueAtTime(0, t0 + dur);
+    o.connect(ga); ga.connect(musIn); o.start(t0); o.stop(t0 + dur + .1);
+  }
+}
+function playBell(n, t0){
+  const o = AC.createOscillator(), o2 = AC.createOscillator(), ga = AC.createGain(), g2 = AC.createGain(); o.frequency.value = mf(n); o2.frequency.value = mf(n) * 2.01; g2.gain.value = .22;
+  ga.gain.setValueAtTime(0, t0); ga.gain.linearRampToValueAtTime(.045, t0 + .02); ga.gain.exponentialRampToValueAtTime(.0004, t0 + 3.8);
+  o.connect(ga); o2.connect(g2); g2.connect(ga); ga.connect(musIn); o.start(t0); o2.start(t0); o.stop(t0 + 3.9); o2.stop(t0 + 3.9);
+}
+function musicTick(){
+  if (!AC || !S.music) return; const t = AC.currentTime;
+  if (t > musNext - .3) { const st = Math.max(t + .05, musNext); playChord(CHORDS[chordIdx % CHORDS.length], st, 11); chordIdx++; musNext = st + 8; }
+  if (t > bellNext) { playBell(BELLS[Math.floor(Math.random() * BELLS.length)], t + .05); if (Math.random() < .35) playBell(BELLS[Math.floor(Math.random() * BELLS.length)], t + .45); bellNext = t + 2.5 + Math.random() * 5; }
+}
 function sfxTap(){
   if (!AC || !S.sound) return; const t = AC.currentTime;
   const o = AC.createOscillator(); o.frequency.setValueAtTime(130, t); o.frequency.exponentialRampToValueAtTime(52, t + .25);
@@ -1353,17 +1634,17 @@ const toastEl = $('#toast'); let toastT = 0;
 function toast(msg){ toastEl.textContent = msg; toastEl.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('show'), 2200); }
 function setFood(on){ foodMode = on; $('#bFood').setAttribute('aria-pressed', on); document.body.classList.toggle('food', on); if (on) toast('Tap the water to drop food'); }
 function setPanel(on){ document.body.classList.toggle('panel-open', on); $('#bSettings').setAttribute('aria-pressed', on); }
-function syncSoundButton(){ const b = $('#bSound'); b.setAttribute('aria-pressed', S.sound); b.querySelectorAll('.w').forEach(p => p.style.display = S.sound ? '' : 'none'); b.querySelector('.m').style.display = S.sound ? 'none' : ''; if (controls.sound) controls.sound.set(S.sound); }
+function syncSoundButton(){ const b = $('#bSound'), on = S.sound || S.music; b.setAttribute('aria-pressed', on); b.querySelectorAll('.w').forEach(p => p.style.display = on ? '' : 'none'); b.querySelector('.m').style.display = on ? 'none' : ''; if (controls.sound) controls.sound.set(S.sound); if (controls.music) controls.music.set(S.music); }
 function setUIHidden(on){ document.body.classList.toggle('ui-hidden', on); if (on) setPanel(false); }
 $('#bFood').onclick = () => setFood(!foodMode);
-$('#bSound').onclick = () => { S.sound = !S.sound; if (S.sound) ensureAudio(); setVolume(); syncSoundButton(); saveSettings(); };
+$('#bSound').onclick = () => { const on = !(S.sound || S.music); S.sound = on; S.music = on; if (on) ensureAudio(); setVolume(); syncSoundButton(); saveSettings(); };
 $('#bEdit').onclick = () => setEdit(!editMode);
 $('#bSettings').onclick = () => setPanel(!document.body.classList.contains('panel-open'));
 $('#bClose').onclick = () => setPanel(false);
 $('#bHide').onclick = () => setUIHidden(true);
 $('#bShow').onclick = () => setUIHidden(false);
 addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT') return; const k = e.key.toLowerCase();
+  if (e.target.tagName === 'INPUT' || (e.target.classList && e.target.classList.contains('slider'))) return; const k = e.key.toLowerCase();
   if (k === 'escape') { if (editMode) setEdit(false); else setPanel(false); }
   else if (k === 'h') setUIHidden(!document.body.classList.contains('ui-hidden'));
   else if (k === 'f') setFood(!foodMode);
@@ -1372,106 +1653,126 @@ addEventListener('keydown', e => {
   else if (editMode && (k === '[' || k === ']')) { edit.layer = clamp(edit.layer + (k === ']' ? 1 : -1), 0, layers.length - 1); syncEditUI(); }
   else if (editMode && (e.metaKey || e.ctrlKey) && k === 'z') $('#eUndo').click();
 });
-const pct = v => Math.round(v * 100) + '%', sgn = v => (v > 0 ? '+' : '') + Math.round(v * 100) + '%', dec = v => (+v).toFixed(2), raw = v => v;
-const SCHEMA = [
-  {title:'Scenes', open:true, items:[{type:'scenes'}, {type:'note', text:'A starting point. Every setting below can still be changed.'}]},
-  {title:'Colour', items:[
-    {type:'gradient'}, {type:'palettes'},
+const pct = v => Math.round(v * 100) + '%', sgn = v => (v > 0 ? '+' : '') + Math.round(v * 100) + '%', dec = v => (+v).toFixed(2), raw = v => v, deg = v => Math.round(v) + '°', mul = v => (+v).toFixed(1) + '×';
+const isT = () => S.shapeMode === 'tunnel', isW = () => S.shapeMode === 'waves';
+const TABS = [
+  {tab:'Scene', items:[{type:'scenes'}, {type:'note', text:'A starting point. Every setting in the other tabs can still be changed.'}, {type:'palettes'}]},
+  {tab:'Colour', items:[
+    {type:'gradient'},
     {type:'colors', keys:[['cAccent','Accent'],['cLight','Light'],['cAmbient','Ambient']]},
-    {k:'ambientAmt', label:'Ambient strength', fx:'colors'},
-    {k:'layerContrast', label:'Sheet separation', fx:'colors'},
-    {k:'accentDepth', label:'Where fish show colour', fx:'colors'},
-    {k:'coral', label:'Coral colour', fx:'colors'},
-    {k:'fishStyle', type:'seg', label:'Fish style', options:[['accent','Accent'],['silhouette','Silhouette'],['light','Light paper']], fx:'none'}]},
-  {title:'Back glow', items:[
-    {k:'backGlow', label:'Glow strength', fx:'colors'},
-    {k:'cGlow', type:'color', label:'Glow colour', fx:'colors'},
-    {k:'glowSize', label:'Glow size', fx:'colors'},
-    {k:'glowSpill', label:'Light spilling onto sheets', fx:'colors'},
-    {type:'note', text:'The glow sits at the far end of the tunnel and follows its back position.'}]},
-  {title:'Tunnel', items:[
-    {k:'tunnel', type:'toggle', label:'Sheets form a tunnel', fx:'shape'},
-    {type:'sub', text:'Size'},
-    {k:'tFrontW', label:'Front width', min:.3, max:1.5, fx:'shape'}, {k:'tFrontH', label:'Front height', min:.3, max:1.5, fx:'shape'},
-    {k:'tBackW', label:'Back width', min:.05, max:1.5, fx:'shape'}, {k:'tBackH', label:'Back height', min:.05, max:1.5, fx:'shape'},
-    {k:'tSizeCurve', label:'Narrowing (early to late)', min:.3, max:3, fx:'shape', fmt:dec},
-    {type:'sub', text:'Shape'},
-    {k:'tCorner', label:'Corner roundness', fx:'shape'}, {k:'tBulge', label:'Side bulge', fx:'shape'}, {k:'tRhythm', label:'Alternate sheets in and out', fx:'shape'},
-    {type:'sub', text:'Direction'},
-    {k:'tFrontX', label:'Front left or right', min:-.6, max:.6, fx:'shape', fmt:sgn}, {k:'tFrontY', label:'Front up or down', min:-.6, max:.6, fx:'shape', fmt:sgn},
-    {k:'tBackX', label:'Back left or right', min:-.8, max:.8, fx:'shapeGlow', fmt:sgn}, {k:'tBackY', label:'Back up or down', min:-.8, max:.8, fx:'shapeGlow', fmt:sgn},
-    {k:'tBend', label:'Bend (early to late)', min:.3, max:3, fx:'shape', fmt:dec},
-    {type:'sub', text:'Edges and randomness'},
+    {k:'ambientAmt', label:'Ambient strength', fx:'colors'}, {k:'layerContrast', label:'Sheet separation', fx:'colors'},
+    {k:'accentDepth', label:'Where fish show colour', fx:'colors'}, {k:'coral', label:'Coral colour', fx:'colors'},
+    {type:'grp', text:'Light'},
+    {k:'lightAngle', label:'Light direction', min:0, max:360, step:1, fx:'light', fmt:deg},
+    {k:'darkness', label:'Darkness in the distance', fx:'colors'}, {k:'lightReach', label:'How far the light reaches', fx:'colors'},
+    {k:'rim', label:'Edge light', fx:'uniforms'},
+    {type:'grp', text:'Back glow'},
+    {k:'backGlow', label:'Glow strength', fx:'colors'}, {k:'cGlow', type:'color', label:'Glow colour', fx:'colors'}, {k:'glowSize', label:'Glow size', fx:'colors'}, {k:'glowSpill', label:'Light spilling onto sheets', fx:'colors'}]},
+  {tab:'Shape', items:[
+    {k:'shapeMode', type:'seg', label:'Layout', options:[['tunnel','Tunnel'],['open','Open water'],['waves','Side waves']], fx:'shape'},
+    {type:'grp', text:'Tunnel size', show:isT},
+    {k:'tFrontW', label:'Front width', min:.3, max:1.5, fx:'shape', show:isT}, {k:'tFrontH', label:'Front height', min:.3, max:1.5, fx:'shape', show:isT},
+    {k:'tBackW', label:'Back width', min:.05, max:1.5, fx:'shape', show:isT}, {k:'tBackH', label:'Back height', min:.05, max:1.5, fx:'shape', show:isT},
+    {k:'tSizeCurve', label:'Narrowing (early to late)', min:.3, max:3, fx:'shape', fmt:dec, show:isT},
+    {type:'grp', text:'Tunnel shape', show:isT},
+    {k:'tCorner', label:'Corner roundness', fx:'shape', show:isT}, {k:'tBulge', label:'Side bulge', fx:'shape', show:isT}, {k:'tRhythm', label:'Alternate sheets in and out', fx:'shape', show:isT},
+    {k:'tFrontX', label:'Front left or right', min:-.6, max:.6, fx:'shape', fmt:sgn, show:isT}, {k:'tFrontY', label:'Front up or down', min:-.6, max:.6, fx:'shape', fmt:sgn, show:isT},
+    {k:'tBackX', label:'Back left or right', min:-.8, max:.8, fx:'shapeGlow', fmt:sgn, show:isT}, {k:'tBackY', label:'Back up or down', min:-.8, max:.8, fx:'shapeGlow', fmt:sgn, show:isT},
+    {k:'tBend', label:'Bend (early to late)', min:.3, max:3, fx:'shape', fmt:dec, show:isT},
+    {type:'grp', text:'Waves', show:isW},
+    {k:'wDir', label:'Side the paper comes from', min:0, max:360, step:1, fx:'shape', fmt:deg, show:isW},
+    {k:'wFront', label:'Front sheet reach', min:0, max:1.5, fx:'shape', show:isW}, {k:'wBack', label:'Back sheet reach', min:0, max:1.5, fx:'shape', show:isW},
+    {k:'wAmp', label:'Wave height', fx:'shape', show:isW}, {k:'wFreq', label:'Wave count', fx:'shape', show:isW},
+    {type:'grp', text:'Openings'},
+    {k:'windows', label:'Extra openings', min:0, max:6, step:1, fx:'shape', fmt:raw}, {k:'winSize', label:'Opening size', fx:'shape'},
+    {k:'winDepth', label:'How deep openings go', fx:'shape'}, {k:'winSpread', label:'Opening spread', fx:'shape'},
+    {k:'holes', label:'Small cut-out holes', fx:'shape'},
+    {type:'grp', text:'Seabed and rock'},
+    {k:'seabed', label:'Seabed height', fx:'shape'}, {k:'hills', label:'Seabed hills', fx:'shape'}, {k:'rocks', label:'Rocks', fx:'shape'}, {k:'stalactites', label:'Hanging rock', fx:'shape'},
+    {type:'grp', text:'Edges'},
+    {k:'smoothing', label:'Smoothness', fx:'organic', live:false}, {k:'roughness', label:'Fine roughness', fx:'organic', live:false},
     {k:'tWobble', label:'Edge wobble', fx:'shape'}, {k:'tWobbleSize', label:'Wobble size', fx:'shape'},
     {k:'tJitterSize', label:'Random size per sheet', max:.4, fx:'shape'}, {k:'tJitterOffset', label:'Random offset per sheet', max:.4, fx:'shape'},
-    {type:'sub', text:'Extras'},
-    {k:'seabed', label:'Seabed height', fx:'shape'}, {k:'hills', label:'Seabed hills', fx:'shape'}, {k:'stalactites', label:'Hanging rock', fx:'shape'}, {k:'rocks', label:'Rocks', fx:'shape'}, {k:'holes', label:'Cut-out bubbles', fx:'shape'},
     {type:'buttons', items:[['Shuffle randomness','newLayout']]}]},
-  {title:'Sheets', items:[
+  {tab:'Sheets', items:[
     {k:'layers', label:'Sheets', min:6, max:30, step:1, fx:'count', live:false, fmt:raw},
     {type:'note', text:'The front and back sheets stay put. Extra sheets are added in between.'},
     {k:'depth', label:'Depth', min:12, max:80, step:1, fx:'layout', fmt:raw},
     {k:'curve', label:'Spacing (even to bunched at front)', min:.6, max:2.4, fx:'layout', fmt:dec},
-    {k:'organic', label:'Organic edges', fx:'organic', live:false},
+    {type:'grp', text:'Movement'},
+    {k:'wobble', label:'Paper movement', fx:'uniforms'}, {k:'wobbleSpeed', label:'Movement speed', fx:'uniforms'},
     {type:'buttons', items:[['Clear all edits','clearEdits']]}]},
-  {title:'Life', items:[
+  {tab:'Life', items:[
     {k:'fishDensity', label:'Fish', fx:'fish', live:false}, {k:'schools', label:'Schools', fx:'fish', live:false},
-    {k:'plantDensity', label:'Plants', fx:'plants', live:false}, {k:'clearFront', label:'Keep the foreground clear', fx:'lifeAll', live:false},
+    {k:'fishSize', label:'Fish size', min:.4, max:2, fx:'fish', live:false, fmt:mul},
+    {k:'fishStyle', type:'seg', label:'Fish style', options:[['accent','Accent'],['single','Single'],['silhouette','Shadow'],['light','Light']], fx:'none'},
+    {k:'fishShadows', type:'toggle', label:'Fish shadows', fx:'none'},
+    {k:'peck', label:'Pecking at the seabed', fx:'none'},
+    {k:'variety', label:'Variety of shapes', min:1, max:8, step:1, fx:'lifeAll', live:false, fmt:raw},
     {k:'bigVisitors', type:'toggle', label:'Whale passing in the deep', fx:'fish'},
-    {type:'sub', text:'Fish'}, {type:'chipset', obj:'fishTypes', map:SPECIES, keys:['reef','tang','angel','koi','slim','puffer','shark','ray','jelly','tiny'], fx:'fish'},
-    {type:'sub', text:'Growing plants'}, {type:'chipset', obj:'growTypes', map:GROW, keys:Object.keys(GROW), fx:'plants'},
-    {type:'sub', text:'Hanging plants'}, {type:'chipset', obj:'hangTypes', map:HANG, keys:Object.keys(HANG), fx:'plants'}]},
-  {title:'Water', items:[
+    {k:'clearFront', label:'Keep the foreground clear', fx:'lifeAll', live:false},
+    {type:'grp', text:'Creatures'}, {type:'chipset', obj:'fishTypes', map:SPECIES, keys:ALL_FISH, fx:'fish'},
+    {type:'grp', text:'Plants'},
+    {k:'plantDensity', label:'Plants', fx:'plants', live:false}, {k:'plantSize', label:'Plant size', min:.4, max:2, fx:'plants', live:false, fmt:mul},
+    {k:'plantsCut', type:'toggle', label:'Plants cut from the sheet', fx:'plants'},
+    {type:'sub', text:'Growing'}, {type:'chipset', obj:'growTypes', map:GROW, keys:Object.keys(GROW), fx:'plants'},
+    {type:'sub', text:'Hanging'}, {type:'chipset', obj:'hangTypes', map:HANG, keys:Object.keys(HANG), fx:'plants'}]},
+  {tab:'Water', items:[
+    {k:'waterFx', label:'Water shimmer', fx:'uniforms'}, {k:'waterScale', label:'Shimmer size', fx:'uniforms'}, {k:'waterSpeed', label:'Shimmer speed', fx:'uniforms'},
     {k:'current', label:'Current', fx:'none'}, {k:'sway', label:'Surge', fx:'none'},
     {k:'particles', label:'Drifting particles', fx:'particles', live:false}, {k:'plankton', label:'Glowing plankton', fx:'particles', live:false},
-    {k:'rays', label:'Light rays', fx:'rays'}, {k:'caustics', label:'Caustics', fx:'uniforms'}]},
-  {title:'Bubbles', items:[
+    {k:'rays', label:'Light rays', fx:'rays'}, {k:'caustics', label:'Caustics', fx:'uniforms'},
+    {type:'grp', text:'Bubbles'},
     {k:'bubbleStyle', type:'seg', label:'Style', options:[['soft','Soft'],['ring','Ring'],['paper','Paper'],['glass','Glass']], fx:'uniforms'},
-    {k:'bubbleAmount', label:'Bubble streams', fx:'bubbles', live:false},
-    {k:'fishTrails', label:'Bubbles from fish', fx:'none'},
+    {k:'bubbleAmount', label:'Bubble streams', fx:'bubbles', live:false}, {k:'fishTrails', label:'Bubbles from fish', fx:'none'},
     {k:'bubbleSize', label:'Size', fx:'uniforms'}, {k:'bubbleSpeed', label:'Rise speed', fx:'uniforms'}, {k:'bubbleOpacity', label:'Opacity', fx:'uniforms'}]},
-  {title:'Camera', items:[
-    {k:'bobX', label:'Bob side to side', fx:'none'}, {k:'bobY', label:'Bob up and down', fx:'none'}, {k:'bobZ', label:'Bob in and out', fx:'none'}, {k:'bobRoll', label:'Roll', fx:'none'}, {k:'bobSpeed', label:'Bob speed', fx:'none'},
-    {k:'lookAround', label:'Look-around range', fx:'coverage', live:false},
+  {tab:'Camera', items:[
+    {k:'lens', label:'Lens (wide to narrow)', fx:'lens', live:false},
+    {k:'viewX', label:'Viewpoint left or right', min:-1, max:1, fx:'view', fmt:sgn, live:false}, {k:'viewY', label:'Viewpoint up or down', min:-1, max:1, fx:'view', fmt:sgn, live:false},
+    {type:'grp', text:'Movement'},
+    {k:'bobX', label:'Bob side to side', max:3, fx:'coverage', live:true}, {k:'bobY', label:'Bob up and down', max:3, fx:'coverage', live:true},
+    {k:'bobZ', label:'Bob in and out', max:3, fx:'none'}, {k:'bobRoll', label:'Roll', max:3, fx:'coverage', live:true}, {k:'bobSpeed', label:'Bob speed', max:2, fx:'none'},
+    {k:'lookAround', label:'Look-around range', max:2, fx:'coverage', live:false},
     {k:'pinchMode', type:'seg', label:'Pinch and scroll', options:[['dolly','Move camera'],['zoom','Zoom lens']], fx:'coverage'},
-    {k:'returnHome', type:'toggle', label:'Drift back to centre', fx:'none'}]},
-  {title:'Depth of field', items:[
-    {k:'dof', type:'toggle', label:'Depth of field', fx:'uniforms'},
-    {k:'tapFocus', type:'toggle', label:'Tap to focus', fx:'none'},
-    {k:'focus', label:'Focus depth', fx:'uniforms'},
-    {k:'dofRange', label:'Sharp range around focus', max:.6, fx:'uniforms'},
-    {k:'dofNear', label:'Foreground blur', fx:'uniforms'},
-    {k:'dofFar', label:'Background blur', fx:'uniforms'},
-    {k:'dofMax', label:'Maximum blur size', fx:'uniforms'},
+    {k:'returnHome', type:'toggle', label:'Drift back to centre', fx:'none'},
+    {type:'grp', text:'Depth of field'},
+    {k:'dof', type:'toggle', label:'Depth of field', fx:'uniforms'}, {k:'tapFocus', type:'toggle', label:'Tap to focus', fx:'none'},
+    {k:'focus', label:'Focus depth', fx:'uniforms'}, {k:'dofRange', label:'Sharp range around focus', max:.6, fx:'uniforms'},
+    {k:'dofNear', label:'Foreground blur', fx:'uniforms'}, {k:'dofFar', label:'Background blur', fx:'uniforms'}, {k:'dofMax', label:'Maximum blur size', fx:'uniforms'},
     {type:'note', text:'To blur only the foreground, set background blur to 0.'}]},
-  {title:'Look', items:[
-    {k:'shadows', label:'Shadow strength', fx:'uniforms'}, {k:'shadowDist', label:'Shadow distance', fx:'uniforms'}, {k:'shadowSoft', label:'Shadow softness', fx:'uniforms'},
-    {k:'grain', label:'Paper grain', fx:'uniforms'}, {k:'rim', label:'Edge light', fx:'uniforms'},
+  {tab:'Look', items:[
+    {k:'shadows', label:'Shadow strength', fx:'uniforms'}, {k:'shadowDist', label:'Shadow distance', max:2, fx:'uniforms'}, {k:'shadowSoft', label:'Shadow softness', max:3, fx:'uniforms'},
+    {k:'grain', label:'Paper grain', fx:'uniforms'},
     {k:'quality', type:'seg', label:'Quality', options:[['auto','Auto'],['low','Low'],['medium','Medium'],['high','High']], fx:'quality'}]},
-  {title:'Sound', items:[{k:'sound', type:'toggle', label:'Ambient sound', fx:'sound'}, {k:'volume', label:'Volume', fx:'sound'}]},
-  {type:'footer', items:[['Reset settings','resetSettings']]}
+  {tab:'Sound', items:[
+    {k:'music', type:'toggle', label:'Soft music', fx:'sound'}, {k:'musicVol', label:'Music volume', fx:'sound'},
+    {k:'sound', type:'toggle', label:'Water ambience and effects', fx:'sound'}, {k:'volume', label:'Ambience volume', fx:'sound'}]}
 ];
-const controls = {}; let gradUI = null;
+const controls = {}, conditional = []; let gradUI = null, activeTab = 0;
 function rebuildPlantsAll(){ layers.forEach(L => anchorPlants(L)); positionPlants(); updateColors(); updateEditVisuals(); }
 const FX = {
   colors:() => { updateColors(); if (gradUI) gradUI.render(); },
-  shape:fin => { if (fin) regenShapes(); },
+  light:fin => { syncUniforms(); if (fin) layoutRays(); },
+  shape:fin => { if (fin) { regenShapes(); refreshVisibility(); } },
   shapeGlow:fin => { updateColors(); if (fin) regenShapes(); },
   layout:fin => applyLayout(!!fin),
   count:fin => { if (fin) setLayerCount(S.layers); },
   organic:fin => { if (fin) layers.forEach(L => queueBuild(L, true)); },
   fish:fin => { if (fin) rebuildFish(); },
   plants:fin => { if (fin) rebuildPlantsAll(); },
-  lifeAll:fin => { if (fin) { rebuildFish(); rebuildPlantsAll(); } },
+  lifeAll:fin => { if (fin) { for (const k in PLANT_GEO) delete PLANT_GEO[k]; rebuildFish(); rebuildPlantsAll(); } },
   particles:fin => { if (fin) rebuildParticles(); },
   bubbles:fin => { if (fin) rebuildBubbles(); },
   rays:fin => { if (fin) layoutRays(); },
   uniforms:() => { syncUniforms(); updateEditVisuals(); },
   coverage:fin => { if (fin) { applyLayout(true); refitGrids(); } },
+  lens:fin => { if (fin) { resetLens(); applyLayout(true); refitGrids(); rebuildFish(); } },
+  view:fin => { if (fin) { applyLayout(true); refitGrids(); } },
   quality:fin => { if (fin) { autoScale = 1; resize(); layers.forEach(L => queueBuild(L, false)); } },
-  sound:() => { if (S.sound) ensureAudio(); setVolume(); syncSoundButton(); },
+  sound:() => { if (S.sound || S.music) ensureAudio(); setVolume(); syncSoundButton(); },
   none:() => {}
 };
+function refreshVisibility(){ for (const c of conditional) c.el.classList.toggle('hide', !c.show()); }
 function applyPalette(key, quiet){ const p = PALETTES[key]; if (!p) return; S.palette = key; S.stops = p.stops.map(s => ({t:s[0], c:s[1]})); S.cAccent = p.accent; S.cLight = p.light; S.cAmbient = p.ambient; S.cGlow = p.glow;
   ['cAccent','cLight','cAmbient','cGlow'].forEach(k => controls[k] && controls[k].set(S[k])); markPalette(); if (gradUI) { gradUI.sel = 0; gradUI.render(); } if (!quiet) { updateColors(); saveSettings(); } }
 function markPalette(){ document.querySelectorAll('.pal').forEach(b => b.setAttribute('aria-pressed', b.dataset.key === S.palette)); }
@@ -1482,12 +1783,12 @@ function applyScene(key){
   for (const k in controls) if (k in S && controls[k].set) controls[k].set(S[k]);
   document.querySelectorAll('.scene').forEach(b => b.setAttribute('aria-pressed', b.dataset.key === key));
   layers.forEach(L => { L.edited = false; L.nudge = 0; }); edit.undo = [];
-  syncUniforms();
+  syncUniforms(); refreshVisibility();
   if (S.layers !== oldN) setLayerCount(S.layers); else { applyLayout(true); refitGrids(); rebuildFish(); }
   saveScene(); saveSettings();
 }
 const ACTIONS = {
-  newLayout:() => { S.seed = (Math.random() * 1e9) | 0; saveSettings(); refitGrids(); layoutRays(); },
+  newLayout:() => { S.seed = (Math.random() * 1e9) | 0; for (const k in PLANT_GEO) delete PLANT_GEO[k]; saveSettings(); refitGrids(); layoutRays(); },
   clearEdits:() => { layers.forEach(L => { L.edited = false; L.nudge = 0; }); edit.undo = []; applyLayout(true); refitGrids(); saveScene(); },
   resetSettings:() => { try { localStorage.removeItem(STORE + '.settings'); } catch (e) {} location.reload(); }
 };
@@ -1516,59 +1817,84 @@ function makeGradient(){
   del.onclick = e => { e.preventDefault(); if (ui.sel > 0 && ui.sel < S.stops.length - 1) { S.stops.splice(ui.sel, 1); ui.sel = Math.max(0, ui.sel - 1); markCustom(); ui.render(); updateColors(); saveSettings(); } };
   gradUI = ui; ui.render(); return w;
 }
+function makeSlider(it){
+  const wrap = mk('div', 'ctl'), row = mk('span', 'row'), out = mk('output'), sl = mk('div', 'slider'), tr = mk('div', 'strack'), fill = mk('div', 'sfill'), th = mk('div', 'sthumb');
+  const min = it.min ?? 0, max = it.max ?? 1, step = it.step ?? .01, fmt = it.fmt || pct, k = it.k;
+  sl.tabIndex = 0; sl.setAttribute('role', 'slider'); sl.setAttribute('aria-label', it.label); sl.setAttribute('aria-valuemin', min); sl.setAttribute('aria-valuemax', max);
+  tr.append(fill, th); sl.append(tr); row.append(mk('span', '', it.label), out); wrap.append(row, sl);
+  const draw = () => { const f = clamp((S[k] - min) / (max - min), 0, 1); fill.style.width = f * 100 + '%'; th.style.left = f * 100 + '%'; out.textContent = fmt(S[k]); sl.setAttribute('aria-valuenow', S[k]); sl.setAttribute('aria-valuetext', fmt(S[k])); };
+  const setVal = v => { v = clamp(Math.round((v - min) / step) * step + min, min, max); v = step >= 1 ? Math.round(v) : +v.toFixed(4); if (v === S[k]) return false; S[k] = v; if (k === 'focus') focusTarget = null; draw(); if (it.live !== false) FX[it.fx](false); return true; };
+  const finish = () => { FX[it.fx](true); saveSettings(); };
+  let st = null;
+  sl.addEventListener('pointerdown', e => { st = {x:e.clientX, y:e.clientY, id:e.pointerId, active:false, v0:S[k]}; });
+  sl.addEventListener('pointermove', e => {
+    if (!st || e.pointerId !== st.id) return; const dx = e.clientX - st.x, dy = e.clientY - st.y;
+    if (!st.active) { if (Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx)) { st = null; return; } if (Math.abs(dx) < 6) return; st.active = true; try { sl.setPointerCapture(e.pointerId); } catch (er) {} sl.classList.add('drag'); }
+    setVal(st.v0 + dx / Math.max(80, tr.getBoundingClientRect().width) * (max - min));
+  });
+  const end = () => { if (st && st.active) { sl.classList.remove('drag'); finish(); } st = null; };
+  sl.addEventListener('pointerup', end); sl.addEventListener('pointercancel', end);
+  sl.addEventListener('keydown', e => { const big = e.shiftKey ? 10 : 1; let d = 0;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') d = step * big; else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') d = -step * big; else if (e.key === 'Home') { setVal(min); finish(); e.preventDefault(); return; } else if (e.key === 'End') { setVal(max); finish(); e.preventDefault(); return; } else return;
+    e.preventDefault(); if (setVal(S[k] + d)) finish(); });
+  draw(); controls[k] = {set:() => draw()}; return wrap;
+}
 function makeControl(it){
-  if (it.type === 'gradient') return makeGradient();
-  if (it.type === 'scenes') { const w = mk('div', 'chips'); for (const [key, sc] of Object.entries(SCENES)) { const b = mk('button', 'chip scene', sc.name); b.dataset.key = key; b.setAttribute('aria-pressed', 'false'); b.onclick = () => applyScene(key); w.appendChild(b); } return w; }
-  if (it.type === 'palettes') { const w = mk('div', 'palettes');
-    for (const [key, p] of Object.entries(PALETTES)) { const b = mk('button', 'pal'); b.dataset.key = key; b.setAttribute('aria-pressed', S.palette === key); const sw = mk('span', 'sw'); sw.style.background = `linear-gradient(90deg, ${p.stops.map(s => `${s[1]} ${s[0] * 100}%`).join(', ')})`; b.append(sw, mk('span', '', p.name)); b.onclick = () => applyPalette(key); w.appendChild(b); }
-    return w; }
-  if (it.type === 'colors') { const w = mk('div', 'colors');
+  let el;
+  if (it.type === 'gradient') el = makeGradient();
+  else if (it.type === 'scenes') { el = mk('div', 'chips'); for (const [key, sc] of Object.entries(SCENES)) { const b = mk('button', 'chip scene', sc.name); b.dataset.key = key; b.setAttribute('aria-pressed', 'false'); b.onclick = () => applyScene(key); el.appendChild(b); } }
+  else if (it.type === 'palettes') { el = mk('div', 'palettes');
+    for (const [key, p] of Object.entries(PALETTES)) { const b = mk('button', 'pal'); b.dataset.key = key; b.setAttribute('aria-pressed', S.palette === key); const sw = mk('span', 'sw'); sw.style.background = `linear-gradient(90deg, ${p.stops.map(s => `${s[1]} ${s[0] * 100}%`).join(', ')})`; b.append(sw, mk('span', '', p.name)); b.onclick = () => applyPalette(key); el.appendChild(b); } }
+  else if (it.type === 'colors') { el = mk('div', 'colors');
     for (const [k, label] of it.keys) { const l = mk('label', 'col'), inp = mk('input', 'cin'); inp.type = 'color'; inp.value = S[k]; inp.setAttribute('aria-label', label + ' colour');
-      inp.oninput = () => { S[k] = inp.value; updateColors(); saveSettings(); }; l.append(inp, mk('span', '', label)); w.appendChild(l); controls[k] = {set:v => inp.value = v}; }
-    return w; }
-  if (it.type === 'color') { const l = mk('label', 'ctl colrow'), inp = mk('input', 'cin'); inp.type = 'color'; inp.value = S[it.k]; inp.oninput = () => { S[it.k] = inp.value; FX[it.fx](true); saveSettings(); }; l.append(mk('span', '', it.label), inp); controls[it.k] = {set:v => inp.value = v}; return l; }
-  if (it.type === 'note') return mk('p', 'note', it.text);
-  if (it.type === 'sub') return mk('div', 'sub', it.text);
-  if (it.type === 'buttons') { const w = mk('div', 'chips'); for (const [label, act] of it.items) { const b = mk('button', 'chip', label); b.onclick = () => ACTIONS[act](); w.appendChild(b); } return w; }
-  if (it.type === 'chipset') { const w = mk('div', 'chips'); for (const k of it.keys) { const b = mk('button', 'chip', it.map[k].name); b.setAttribute('aria-pressed', !!S[it.obj][k]);
-      b.onclick = () => { S[it.obj][k] = !S[it.obj][k]; b.setAttribute('aria-pressed', S[it.obj][k]); FX[it.fx](true); saveSettings(); }; w.appendChild(b); } return w; }
-  if (it.type === 'toggle') { const l = mk('label', 'ctl toggle'), inp = mk('input', 'switch'); inp.type = 'checkbox'; inp.checked = !!S[it.k];
-    inp.onchange = () => { S[it.k] = inp.checked; FX[it.fx](true); saveSettings(); }; l.append(mk('span', '', it.label), inp); controls[it.k] = {set:v => inp.checked = !!v}; return l; }
-  if (it.type === 'seg') { const w = mk('div', 'ctl'), seg = mk('div', 'seg'); seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', it.label); const btns = [];
+      inp.oninput = () => { S[k] = inp.value; updateColors(); saveSettings(); }; l.append(inp, mk('span', '', label)); el.appendChild(l); controls[k] = {set:v => inp.value = v}; } }
+  else if (it.type === 'color') { el = mk('label', 'ctl colrow'); const inp = mk('input', 'cin'); inp.type = 'color'; inp.value = S[it.k]; inp.oninput = () => { S[it.k] = inp.value; FX[it.fx](true); saveSettings(); }; el.append(mk('span', '', it.label), inp); controls[it.k] = {set:v => inp.value = v}; }
+  else if (it.type === 'note') el = mk('p', 'note', it.text);
+  else if (it.type === 'sub') el = mk('div', 'sub', it.text);
+  else if (it.type === 'grp') el = mk('div', 'grp', it.text);
+  else if (it.type === 'buttons') { el = mk('div', 'chips'); for (const [label, act] of it.items) { const b = mk('button', 'chip', label); b.onclick = () => ACTIONS[act](); el.appendChild(b); } }
+  else if (it.type === 'chipset') { el = mk('div', 'chips'); for (const k of it.keys) { const b = mk('button', 'chip', it.map[k].name); b.setAttribute('aria-pressed', !!S[it.obj][k]);
+      b.onclick = () => { S[it.obj][k] = !S[it.obj][k]; b.setAttribute('aria-pressed', S[it.obj][k]); FX[it.fx](true); saveSettings(); }; el.appendChild(b); } }
+  else if (it.type === 'toggle') { el = mk('label', 'ctl toggle'); const inp = mk('input', 'switch'); inp.type = 'checkbox'; inp.checked = !!S[it.k];
+    inp.onchange = () => { S[it.k] = inp.checked; FX[it.fx](true); saveSettings(); }; el.append(mk('span', '', it.label), inp); controls[it.k] = {set:v => inp.checked = !!v}; }
+  else if (it.type === 'seg') { el = mk('div', 'ctl'); const seg = mk('div', 'seg'); seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', it.label); const btns = [];
     for (const [v, lab] of it.options) { const b = mk('button', '', lab); b.setAttribute('aria-pressed', S[it.k] === v); b.onclick = () => { S[it.k] = v; btns.forEach(x => x.setAttribute('aria-pressed', x === b)); FX[it.fx](true); saveSettings(); }; btns.push(b); seg.appendChild(b); }
-    controls[it.k] = {set:val => btns.forEach((b, i) => b.setAttribute('aria-pressed', it.options[i][0] === val))}; w.append(mk('span', '', it.label), seg); return w; }
-  const l = mk('label', 'ctl'), row = mk('span', 'row'), out = mk('output'), inp = mk('input'); inp.type = 'range'; inp.min = it.min ?? 0; inp.max = it.max ?? 1; inp.step = it.step ?? .01; inp.value = S[it.k];
-  const fmt = it.fmt || pct, show = () => out.textContent = fmt(+inp.value); show();
-  inp.oninput = () => { S[it.k] = it.step === 1 ? parseInt(inp.value, 10) : parseFloat(inp.value); if (it.k === 'focus') focusTarget = null; show(); if (it.live !== false) FX[it.fx](false); };
-  inp.onchange = () => { FX[it.fx](true); saveSettings(); };
-  row.append(mk('span', '', it.label), out); l.append(row, inp); controls[it.k] = {set:v => { inp.value = v; show(); }}; return l;
+    controls[it.k] = {set:val => btns.forEach((b, i) => b.setAttribute('aria-pressed', it.options[i][0] === val))}; el.append(mk('span', '', it.label), seg); }
+  else el = makeSlider(it);
+  if (it.show) conditional.push({el, show:it.show});
+  return el;
 }
 function buildPanel(){
-  const root = $('#panelBody');
-  for (const sec of SCHEMA) {
-    if (sec.type === 'footer') { const f = mk('div', 'footer'); for (const [label, act] of sec.items) { const b = mk('button', 'chip', label); b.onclick = () => ACTIONS[act](); f.appendChild(b); } root.appendChild(f); continue; }
-    const d = mk('details', 'sec-d'); if (sec.open) d.open = true; const body = mk('div', 'sec');
-    for (const it of sec.items) body.appendChild(makeControl(it));
-    d.append(mk('summary', '', sec.title), body); root.appendChild(d);
-  }
+  const tabs = $('#tabs'), root = $('#panelBody'); const panes = [];
+  TABS.forEach((t, i) => {
+    const b = mk('button', 'tab', t.tab); b.setAttribute('role', 'tab'); b.setAttribute('aria-selected', i === activeTab); b.id = 'tab' + i; tabs.appendChild(b);
+    const pane = mk('div', 'pane' + (i === activeTab ? ' on' : '')); pane.setAttribute('role', 'tabpanel'); pane.setAttribute('aria-labelledby', 'tab' + i);
+    for (const it of t.items) pane.appendChild(makeControl(it));
+    root.appendChild(pane); panes.push(pane);
+    b.onclick = () => { activeTab = i; tabs.querySelectorAll('.tab').forEach((x, j) => x.setAttribute('aria-selected', j === i)); panes.forEach((p, j) => p.classList.toggle('on', j === i)); root.scrollTop = 0; };
+  });
+  const f = mk('div', 'footer'); const rb = mk('button', 'chip', 'Reset settings'); rb.onclick = ACTIONS.resetSettings; f.appendChild(rb); root.appendChild(f);
+  refreshVisibility();
 }
 
-/* ================= depth of field post-process ================= */
-let rt = null, dofMat = null;
+/* ================= post-processing: water shimmer, tap ripple, depth of field ================= */
+let rt = null, postMat = null;
 const postScene = new THREE.Scene(), postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+function postActive(){ return !editMode && (S.dof || S.waterFx > .001); }
 function ensureRT(){
   const sz = new THREE.Vector2(); renderer.getDrawingBufferSize(sz);
+  if (!postMat) {
+    postMat = new THREE.ShaderMaterial({ uniforms:{ tCol:{value:null}, uRes:{value:new THREE.Vector2()}, uFocus:shared.uFocus, uRange:shared.uRange, uNear:shared.uNear, uFar:shared.uFar, uMax:{value:12},
+      uDof:{value:0}, uWater:{value:0}, uWScale:{value:.4}, uWSpeed:{value:.4}, uTime:shared.uTime, uRip:{value:new THREE.Vector4()} },
+      vertexShader:'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }', fragmentShader:POST_FS, depthTest:false, depthWrite:false });
+    const q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postMat); q.frustumCulled = false; postScene.add(q); syncUniforms();
+  }
   if (rt && rt.width === sz.x && rt.height === sz.y) return;
   if (rt) rt.dispose();
   const opts = {format:THREE.RGBAFormat, type:THREE.UnsignedByteType, depthBuffer:true, minFilter:THREE.LinearFilter, magFilter:THREE.LinearFilter};
   rt = IS_GL2 && THREE.WebGLMultisampleRenderTarget ? new THREE.WebGLMultisampleRenderTarget(sz.x, sz.y, opts) : new THREE.WebGLRenderTarget(sz.x, sz.y, opts);
   if (rt.samples !== undefined) rt.samples = 4;
-  if (!dofMat) {
-    dofMat = new THREE.ShaderMaterial({ uniforms:{ tCol:{value:null}, uRes:{value:new THREE.Vector2()}, uFocus:shared.uFocus, uRange:shared.uRange, uNear:shared.uNear, uFar:shared.uFar, uMax:{value:12} },
-      vertexShader:'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }', fragmentShader:DOF_FS, depthTest:false, depthWrite:false });
-    const q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), dofMat); q.frustumCulled = false; postScene.add(q);
-  }
-  dofMat.uniforms.tCol.value = rt.texture; dofMat.uniforms.uRes.value.copy(sz); dofMat.uniforms.uMax.value = (4 + S.dofMax * 28) * renderer.getPixelRatio();
+  postMat.uniforms.tCol.value = rt.texture; postMat.uniforms.uRes.value.copy(sz); postMat.uniforms.uMax.value = (4 + S.dofMax * 28) * renderer.getPixelRatio();
 }
 
 /* ================= resize & loop ================= */
@@ -1592,18 +1918,19 @@ function frame(now){
   shared.uCurrent.value = S.current * (.8 + .3 * Math.sin(time * .06)); shared.uSway.value = S.sway;
   const dr = shared.uDrift.value; dr.x = (dr.x + (shared.uCurrent.value * .3 + S.sway * .2 * Math.cos(time * .7)) * dt) % 2000; dr.y = (dr.y - .025 * dt) % 2000;
   shared.uTouch.value.w *= Math.exp(-dt * 1.2);
-  const age = time - ripple.t; shared.uRipple.value.set(ripple.x, ripple.y, age, age < 2.4 ? 1 - age / 2.4 : 0);
+  const age = time - ripple.t, rs = age < 2.4 ? 1 - age / 2.4 : 0, post = postActive();
+  shared.uRipple.value.set(ripple.x, ripple.y, age, post ? 0 : rs);
   updateCamera(dt);
-  const N = layers.length; if (N >= 3) for (const f of fishes) updateFish(f, dt, N);
-  updateFood(dt); updateRays(); updateTrails(dt);
+  const N = layers.length; if (N >= 3) { for (const f of fishes) updateFish(f, dt, N); for (const c of crawlers) updateCrawler(c, dt); }
+  updateFood(dt); updateRays(); updateTrails(dt); musicTick();
   if (AC && S.sound) { bubbleClock -= dt; if (bubbleClock < 0) { bubbleClock = 2 + Math.random() * 6; sfxBubble(.025 + Math.random() * .04); } }
   if (S.quality === 'auto' && time > 4 && initialDone) { fpsAcc += dt; fpsN++; if (fpsAcc > 2.5) { const fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; if (fps < 38 && autoScale > .76) { autoScale *= .88; resize(); } } }
-  if (S.dof && !editMode) { ensureRT(); renderer.setRenderTarget(rt); renderer.render(scene, camera); renderer.setRenderTarget(null); renderer.render(postScene, postCam); }
+  if (post) { ensureRT(); postMat.uniforms.uRip.value.set(ripple.x, ripple.y, age, rs); renderer.setRenderTarget(rt); renderer.render(scene, camera); renderer.setRenderTarget(null); renderer.render(postScene, postCam); }
   else renderer.render(scene, camera);
 }
 
 /* ================= init ================= */
-resize(); layoutAspect = aspect;
+resize(); layoutAspect = aspect; resetLens();
 S.layers = clamp(S.layers | 0, 6, 30);
 for (let i = 0; i < S.layers; i++) layers.push(makeLayer());
 loadScene();
